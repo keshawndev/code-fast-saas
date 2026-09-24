@@ -37,3 +37,4 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 
 standalone cut the runtime from 439MB to Y 66MB
+codefast:builder 1.06gb vs codefast:local 336.12mb

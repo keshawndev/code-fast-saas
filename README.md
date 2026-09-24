@@ -1,40 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# CodeFast SaaS: Cloud Deployment Portfolio
 
-## Getting Started
+One or two sentences: what the app is (a feedback board where users
+post and upvote ideas) and what this repo demonstrates (taking an app
+from local development to a containerized, CI/CD-deployed cloud service).                                                                      
 
-First, run the development server:
+## Tech Stack
+App: Next.js 15, MongoDB, Auth.js, Stripe
+Infrastructure: Docker, Docker Compose (more added each phase)                                                                                 
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Project Roadmap
+- [x] Phase 1: Containerization
+- [ ] Phase 2: CI with GitHub Actions
+- [ ] Phase 3: AWS infrastructure with Terraform                                                                                               
+- [ ] Phase 4: Continuous deployment (dev → staging → prod)                                                                                    
+- [ ] Phase 5: Monitoring and alerting                                                                                                         
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Branching Strategy
+Explain dev → staging → prod in your words: work happens on feature
+branches, merges into dev through PRs, then gets promoted by PR.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Run It Locally
+Prerequisites: Docker Desktop, Stripe CLI
+Numbered steps:                                                                                                                                
+1. clone
+2. cp .env.example .env.local, then fill in values
+3. docker compose up --build                                                                                                                   
+4. stripe listen --forward-to localhost:3000/api/webhook                                                                                       
+5. open http://localhost:3000                                                                                                                  
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Phase 1: Containerization
+The section interviewers care most about. Short bullets:
+- Multi-stage build: 1.06 GB → 336 MB final image
+- Standalone output: 439 MB node_modules → 66 MB runtime                                                                                       
+- Runs as a non-root user                                                                                                                      
+- /api/health endpoint + Docker HEALTHCHECK                                                                                                    
+- Build once, configure at runtime: no secrets in the image                                                                                    
+(mention the lazy MongoDB connection fix)                                                                                                    
 
-## Learn More
+### Problems I Solved
+2–4 short entries: problem → cause → fix. You have great ones:
+- Build failed without MONGO_URI → connection happened at import → made it lazy                                                                
+- Container unhealthy → localhost resolved to IPv6 → used 127.0.0.1                                                                            
+- OAuth failed in container → Auth.js used 0.0.0.0 → set AUTH_URL                                                                              
+- Subscriptions didn't activate → Stripe can't reach localhost → Stripe CLI                                                                    
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-
-standalone cut the runtime from 439MB to Y 66MB
-codefast:builder 1.06gb vs codefast:local 336.12mb
+## Known Issues
+- Board share link is hardcoded to one domain
+- /dashboard crashes on a null session in one case          

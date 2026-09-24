@@ -1,0 +1,29 @@
+services:
+  
+  app:
+      build: .
+      image: codefast:local
+      ports:
+        - 3000:3000
+      env_file:
+        - .env.local
+      environment:
+        MONGO_URI: mongodb://mongo:27017/codefast
+        AUTH_TRUST_HOST: "true"
+        AUTH_URL: http://localhost:3000
+      depends_on:                                                                                                                                
+        mongo:                                                                                                                                             
+          condition: service_healthy
+ 
+  mongo:
+      image: mongo:8
+      volumes:
+        - mongo-data:/data/db
+      healthcheck:
+        test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+        interval: 10s                                                                                                                            
+        timeout: 5s
+        retries: 5
+
+volumes:
+  mongo-data:

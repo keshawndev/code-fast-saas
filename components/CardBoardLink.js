@@ -3,7 +3,7 @@
 import toast from "react-hot-toast";
 
 const CardBoardLink = ({ boardId, appUrl }) => {
-    const boardLink = `${appUrl}/b/${boardId}`;
+  const boardLink = `${appUrl}/b/${boardId}`;
 
   const copyLink = () => {
     navigator.clipboard.writeText(boardLink);

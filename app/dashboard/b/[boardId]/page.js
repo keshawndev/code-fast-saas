@@ -59,8 +59,9 @@ export default async function FeedbackBoard({ params }) {
         <div className="space-y-8">
           <h1 className="font-extrabold text-xl mb-4">{board.name}</h1>
 
-          <CardBoardLink boardId={board._id.toString()}
-          appUrl={process.env.APP_URL}
+          <CardBoardLink
+            boardId={board._id.toString()}
+            appUrl={process.env.APP_URL}
           />
 
           <ButtonDeleteBoard boardId={board._id.toString()} />

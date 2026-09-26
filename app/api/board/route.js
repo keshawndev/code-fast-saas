@@ -11,7 +11,7 @@ export async function POST(req) {
     if (!body.name) {
       return NextResponse.json(
         { error: "Board name is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -28,7 +28,7 @@ export async function POST(req) {
     if (!user.hasAccess) {
       return NextResponse.json(
         { error: "Please subscribe first" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -55,7 +55,7 @@ export async function DELETE(req) {
     if (!boardId) {
       return NextResponse.json(
         { error: "Board ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -70,7 +70,7 @@ export async function DELETE(req) {
     if (!user.hasAccess) {
       return NextResponse.json(
         { error: "Please suscribe first" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 

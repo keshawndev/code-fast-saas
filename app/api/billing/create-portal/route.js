@@ -11,7 +11,7 @@ export async function POST(req) {
     if (!body.returnUrl) {
       return NextResponse.json(
         { error: "Return URL is Required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

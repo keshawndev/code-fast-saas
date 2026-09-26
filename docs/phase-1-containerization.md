@@ -7,22 +7,22 @@ with one image that gets configured per environment at runtime.
 
 ## Results
 
-| | Before | After |
-|---|---|---|
-| Runtime files | 439 MB (`node_modules`) | 66 MB (Next.js standalone output) |
-| Docker image | 1.06 GB (build stage) | 336 MB (final image) |
+|                             | Before                           | After                                 |
+| --------------------------- | -------------------------------- | ------------------------------------- |
+| Runtime files               | 439 MB (`node_modules`)          | 66 MB (Next.js standalone output)     |
+| Docker image                | 1.06 GB (build stage)            | 336 MB (final image)                  |
 | Rebuild after a code change | ~85s (reinstalling dependencies) | ~1s for the dependency layer (cached) |
 
 ## What I Built
 
-| File | Purpose |
-|---|---|
-| [`Dockerfile`](../Dockerfile) | Three-stage build: `deps` → `builder` → `runner` |
-| [`.dockerignore`](../.dockerignore) | Keeps `node_modules`, `.next`, `.git`, and `.env*` out of the build context |
-| [`docker-compose.yml`](../docker-compose.yml) | App + local MongoDB with a persistent volume and health-based startup |
-| [`app/api/health/route.js`](../app/api/health/route.js) | Liveness endpoint for Docker and load balancer health checks |
-| [`.env.example`](../.env.example) | Documents every required environment variable, with no values |
-| [`.gitattributes`](../.gitattributes) | Enforces LF line endings so Windows edits don't break Linux containers |
+| File                                                    | Purpose                                                                     |
+| ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`Dockerfile`](../Dockerfile)                           | Three-stage build: `deps` → `builder` → `runner`                            |
+| [`.dockerignore`](../.dockerignore)                     | Keeps `node_modules`, `.next`, `.git`, and `.env*` out of the build context |
+| [`docker-compose.yml`](../docker-compose.yml)           | App + local MongoDB with a persistent volume and health-based startup       |
+| [`app/api/health/route.js`](../app/api/health/route.js) | Liveness endpoint for Docker and load balancer health checks                |
+| [`.env.example`](../.env.example)                       | Documents every required environment variable, with no values               |
+| [`.gitattributes`](../.gitattributes)                   | Enforces LF line endings so Windows edits don't break Linux containers      |
 
 ## Design Decisions
 
@@ -49,40 +49,51 @@ with one image that gets configured per environment at runtime.
 ## Problems I Solved
 
 ### 1. The build failed without database credentials
+
 - **Problem:** `next build` crashed inside Docker with `Missing environment variable: "MONGO_URI"`.
 - **Cause:** `libs/mongo.js` connected to MongoDB as soon as it was imported, and Next.js imports route files during the build ("Collecting page data").
 - **Fix:** made the connection lazy. `getMongoClient()` connects on first use and is passed to `MongoDBAdapter` as a function, so the database is only needed at runtime.
 
 ### 2. The container reported "unhealthy" even though the app worked
+
 - **Problem:** the site loaded in a browser, but `docker ps` showed `(unhealthy)`.
 - **Cause:** I found it with `docker inspect --format '{{json .State.Health}}'` and by running `wget` from inside the container. On Alpine, `localhost` resolved to IPv6 (`::1`), but the server only listened on IPv4 (`HOSTNAME=0.0.0.0`).
 - **Fix:** pointed the health check at `127.0.0.1`.
 
 ### 3. Google sign-in failed inside the container
+
 - **Problem:** OAuth login was rejected, and no user was ever written to the database.
 - **Cause:** `curl /api/auth/providers` showed Auth.js building callback URLs with `0.0.0.0` (the server's listen address) instead of `localhost`, so they didn't match the redirect URIs registered with Google.
 - **Fix:** set `AUTH_URL` to tell Auth.js its public address. Each environment gets its own value.
 
 ### 4. Subscriptions didn't activate
+
 - **Problem:** checkout succeeded, but the user never got access.
 - **Cause:** Stripe confirms payments by calling the app's webhook, and Stripe's servers can't reach `localhost`. The user's `hasAccess` field was never set.
 - **Fix:** used `stripe listen --forward-to localhost:3000/api/webhook` to forward events to the local container, with the CLI's signing secret in `.env.local`.
 
 ### 5. Board share link showed `undefined` in the container
+
 - **Problem:** the share link was hardcoded to one domain. After moving it into `NEXT_PUBLIC_APP_URL`, it worked with `npm run dev` but showed `undefined/b/...` in the container.
-- **Cause:** `printenv` showed the variable *was* set in the running container. But Next.js inlines `NEXT_PUBLIC_*` values into the browser JavaScript at **build time**, and my Docker build deliberately has no env files (`.dockerignore` excludes `.env*`). The value was baked in as `undefined` before the container ever started.
+- **Cause:** `printenv` showed the variable _was_ set in the running container. But Next.js inlines `NEXT_PUBLIC_*` values into the browser JavaScript at **build time**, and my Docker build deliberately has no env files (`.dockerignore` excludes `.env*`). The value was baked in as `undefined` before the container ever started.
 - **Fix:** switched to a server-only `APP_URL`, read by the board page (a server component) on each request and passed to the link component as a prop. I proved one image works in any environment by changing `APP_URL` in Compose and restarting without rebuilding.
+
+### 6. Logged-out visits to `/dashboard` crashed on the server
+
+- **Problem:** the container logs showed `TypeError: Cannot read properties of null (reading 'user')`, but nothing looked wrong in the browser. Logged-out users were correctly redirected to the homepage.
+- **Cause:** I reproduced it with a cookie-less `curl` to `/dashboard` while following the logs (`docker compose logs -f app`). The response was a `307` redirect _and_ a new `TypeError` every time. `app/dashboard/layout.js` redirects when there's no session, but Next.js renders layouts and pages **in parallel**, so the layout's redirect didn't stop `page.js` from running and reading `session.user.id` on a null session.
+- **Fix:** the page now guards itself: it redirects if there's no session, or if the session's user isn't in the database (for example, a valid cookie pointing at a different environment's database). After rebuilding, the same `curl` still returns `307`, with no errors in the logs.
 
 ## Follow-up Fixes
 
 Bugs that containerization exposed, each fixed in its own PR:
 
 - [x] Board share link is hardcoded to a single domain. Now read from runtime `APP_URL` (Problem 5).
-- [ ] `/dashboard` can throw on a null session in one case.
+- [x] `/dashboard` threw on a null session for logged-out visitors. The page now guards itself (Problem 6).
 
 ## What I Learned
 
-- `localhost` inside a container means *that container*. Services reach each
+- `localhost` inside a container means _that container_. Services reach each
   other by name (`mongo:27017`), and the outside world reaches the app
   through published ports.
 - Anything needed at build time can end up in the image, so configuration
@@ -94,3 +105,8 @@ Bugs that containerization exposed, each fixed in its own PR:
   frontend frameworks bake them in at build time (`NEXT_PUBLIC_`, `VITE_`,
   `REACT_APP_`). If a value must change per environment, read it on the
   server at runtime.
+- Check the logs, not just the browser. A bug can be invisible to users
+  while throwing an error on every request, which buries real incidents and
+  makes alerts noisy.
+- An auth check in one place doesn't protect code that runs somewhere else.
+  Every piece of code that uses the session has to handle there being none.

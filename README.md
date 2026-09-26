@@ -102,7 +102,6 @@ local database.
 
 ## Known Issues
 
-- Board share link is hardcoded to a single domain. *(fix in progress)*
 - `/dashboard` can throw on a null session in one case. *(fix in progress)*
 - A few ESLint warnings remain; these will be fixed once CI enforces linting
   in Phase 2.

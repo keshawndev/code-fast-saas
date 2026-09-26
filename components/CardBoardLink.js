@@ -2,12 +2,8 @@
 
 import toast from "react-hot-toast";
 
-const CardBoardLink = ({ boardId }) => {
-  const boardLink = `${
-    process.env.NODE_ENV === "development"
-      ? "http://localhost:3000"
-      : "https://keshawnbarbarytest.com"
-  }/b/${boardId}`;
+const CardBoardLink = ({ boardId, appUrl }) => {
+  const boardLink = `${appUrl}/b/${boardId}`;
 
   const copyLink = () => {
     navigator.clipboard.writeText(boardLink);

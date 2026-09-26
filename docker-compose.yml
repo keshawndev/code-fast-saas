@@ -1,5 +1,5 @@
 services:
-  
+
   app:
       build: .
       image: codefast:local
@@ -11,17 +11,18 @@ services:
         MONGO_URI: mongodb://mongo:27017/codefast
         AUTH_TRUST_HOST: "true"
         AUTH_URL: http://localhost:3000
-      depends_on:                                                                                                                                
-        mongo:                                                                                                                                             
+        APP_URL: http://localhost:3000
+      depends_on:
+        mongo:
           condition: service_healthy
- 
+
   mongo:
       image: mongo:8
       volumes:
         - mongo-data:/data/db
       healthcheck:
         test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-        interval: 10s                                                                                                                            
+        interval: 10s
         timeout: 5s
         retries: 5
 

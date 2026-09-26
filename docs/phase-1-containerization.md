@@ -68,11 +68,16 @@ with one image that gets configured per environment at runtime.
 - **Cause:** Stripe confirms payments by calling the app's webhook, and Stripe's servers can't reach `localhost`. The user's `hasAccess` field was never set.
 - **Fix:** used `stripe listen --forward-to localhost:3000/api/webhook` to forward events to the local container, with the CLI's signing secret in `.env.local`.
 
+### 5. Board share link showed `undefined` in the container
+- **Problem:** the share link was hardcoded to one domain. After moving it into `NEXT_PUBLIC_APP_URL`, it worked with `npm run dev` but showed `undefined/b/...` in the container.
+- **Cause:** `printenv` showed the variable *was* set in the running container. But Next.js inlines `NEXT_PUBLIC_*` values into the browser JavaScript at **build time**, and my Docker build deliberately has no env files (`.dockerignore` excludes `.env*`). The value was baked in as `undefined` before the container ever started.
+- **Fix:** switched to a server-only `APP_URL`, read by the board page (a server component) on each request and passed to the link component as a prop. I proved one image works in any environment by changing `APP_URL` in Compose and restarting without rebuilding.
+
 ## Follow-up Fixes
 
 Bugs that containerization exposed, each fixed in its own PR:
 
-- [ ] Board share link is hardcoded to a single domain. It needs to come from per-environment configuration.
+- [x] Board share link is hardcoded to a single domain. Now read from runtime `APP_URL` (Problem 5).
 - [ ] `/dashboard` can throw on a null session in one case.
 
 ## What I Learned
@@ -84,3 +89,8 @@ Bugs that containerization exposed, each fixed in its own PR:
   and secrets belong at runtime.
 - The app needs to know its own public URL, and that URL is different in
   every environment.
+- Every config value has a moment when it gets read: build time, start
+  time, or request time. Browser code can't read environment variables, so
+  frontend frameworks bake them in at build time (`NEXT_PUBLIC_`, `VITE_`,
+  `REACT_APP_`). If a value must change per environment, read it on the
+  server at runtime.

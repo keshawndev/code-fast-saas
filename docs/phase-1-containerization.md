@@ -3,7 +3,7 @@
 **Goal:** package the app so it runs the same way on my laptop, in CI, and on AWS,
 with one image that gets configured per environment at runtime.
 
-**Pull request:** *(link to PR)*
+**Pull request:** [#1](https://github.com/keshawndev/code-fast-saas/pull/1)
 
 ## Results
 

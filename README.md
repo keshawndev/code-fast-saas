@@ -21,22 +21,20 @@ containerization, pipelines, and infrastructure are my own work.
 - **Runtime configuration:** one image, configured per environment, with no secrets baked in
 - **CI/CD:** *(Phase 2–4)*
 - **Infrastructure as code:** *(Phase 3)*
-- **Debugging:** real problems I hit, and how I diagnosed and fixed them ([see below](#problems-i-solved))
+- **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
-## Project Roadmap
+## Project Phases
 
-- [x] **Phase 1:** Containerization with Docker and Docker Compose
-- [ ] **Phase 2:** CI with GitHub Actions (lint, test, build, image scan)
-- [ ] **Phase 3:** AWS infrastructure with Terraform
-- [ ] **Phase 4:** Continuous deployment (dev → staging → prod)
-- [ ] **Phase 5:** Monitoring and alerting
+Each phase has its own write-up covering the design decisions and the
+problems I solved, plus a pull request into `dev` with the actual changes.
 
-## How to Read This Repo
-
-Each phase is a pull request into `dev`, made of small, single-purpose
-commits. The PRs are the best place to see how the project developed:
-
-- Phase 1: Containerization → *(link to PR)*
+| Phase | Status | Write-up |
+|---|---|---|
+| 1. Containerization with Docker and Docker Compose | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
+| 2. CI with GitHub Actions (lint, test, build, image scan) | Planned | |
+| 3. AWS infrastructure with Terraform | Planned | |
+| 4. Continuous deployment (dev → staging → prod) | Planned | |
+| 5. Monitoring and alerting | Planned | |
 
 ## Tech Stack
 
@@ -51,13 +49,13 @@ commits. The PRs are the best place to see how the project developed:
 
 ```mermaid
 flowchart LR
-    F[feature/*] -- PR --> D[dev]
+    F[feature/* or fix/*] -- PR --> D[dev]
     D -- PR --> S[staging]
     S -- PR --> P[prod]
 ```
 
-- New work happens on a short-lived `feature/*` branch.
-- Features merge into `dev` through a pull request.
+- New work happens on a short-lived `feature/*` or `fix/*` branch.
+- Changes merge into `dev` through a pull request.
 - Changes are promoted `dev` → `staging` → `prod`, each through its own PR.
 - Each branch maps to its own environment.
 
@@ -102,57 +100,9 @@ mode, and Google OAuth credentials.
 Stop everything with `docker compose down`. Add `-v` to also delete the
 local database.
 
-## Phase 1: Containerization
-
-| | Before | After |
-|---|---|---|
-| Runtime files | 439 MB (`node_modules`) | 66 MB (Next.js standalone output) |
-| Docker image | 1.06 GB (build stage) | 336 MB (final image) |
-
-- **Multi-stage build:** separate stages install dependencies, build the
-  app, and run it. Only the final stage ships, so build tools never reach
-  production.
-- **Layer caching:** `package.json` is copied before the source code, so
-  dependencies are only reinstalled when they change. Rebuilds went from
-  85s to about 1s.
-- **Non-root user:** the container runs as a limited `nextjs` user instead
-  of root.
-- **Health checks:** a `/api/health` endpoint, checked by Docker's
-  `HEALTHCHECK` and later by the AWS load balancer.
-- **Build once, configure at runtime:** secrets are passed in when the
-  container starts, never baked into the image. `.dockerignore` keeps
-  `.env` files out of the build.
-- **One-command setup:** Docker Compose runs the app with a local MongoDB,
-  a persistent volume, and health-based startup ordering.
-- **Consistent line endings:** `.gitattributes` enforces LF endings, so
-  files edited on Windows don't break in Linux containers.
-
-### Problems I Solved
-
-**1. The build failed without database credentials**
-- **Problem:** `next build` crashed inside Docker with `Missing environment variable: "MONGO_URI"`.
-- **Cause:** `libs/mongo.js` connected to MongoDB as soon as it was imported, and Next.js imports route files during the build.
-- **Fix:** made the connection lazy. It now connects on first use, so the database is only needed at runtime.
-
-**2. The container reported "unhealthy" even though the app worked**
-- **Problem:** the site loaded in a browser, but `docker ps` showed `(unhealthy)`.
-- **Cause:** I found it with `docker inspect` and by testing from inside the container. On Alpine, `localhost` resolved to IPv6 (`::1`), but the server only listened on IPv4.
-- **Fix:** pointed the health check at `127.0.0.1`.
-
-**3. Google sign-in failed inside the container**
-- **Problem:** OAuth login was rejected.
-- **Cause:** `/api/auth/providers` showed Auth.js building callback URLs with `0.0.0.0` (the server's listen address) instead of `localhost`, so they didn't match the URIs registered with Google.
-- **Fix:** set `AUTH_URL` to tell Auth.js its public address. Each environment gets its own value.
-
-**4. Subscriptions didn't activate**
-- **Problem:** checkout succeeded, but the user never got access.
-- **Cause:** Stripe confirms payments by calling the app's webhook, and Stripe's servers can't reach `localhost`.
-- **Fix:** used the Stripe CLI to forward webhook events to the local container.
-
 ## Known Issues
 
-- The board share link is hardcoded to a single domain. It needs to come
-  from per-environment configuration.
-- `/dashboard` can throw on a null session in one case.
+- Board share link is hardcoded to a single domain. *(fix in progress)*
+- `/dashboard` can throw on a null session in one case. *(fix in progress)*
 - A few ESLint warnings remain; these will be fixed once CI enforces linting
   in Phase 2.

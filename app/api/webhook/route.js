@@ -15,7 +15,7 @@ export async function POST(req) {
     const event = stripe.webhooks.constructEvent(
       body,
       signature,
-      webhookSecret
+      webhookSecret,
     );
 
     const { data, type } = event;

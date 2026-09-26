@@ -12,7 +12,7 @@ const ButtonDeletePost = ({ postId }) => {
   const handelDeletePost = async () => {
     try {
       const isUserSure = window.confirm(
-        "Are you sure you want to delete this post?"
+        "Are you sure you want to delete this post?",
       );
 
       if (isUserSure && !isLoading) {

@@ -19,8 +19,8 @@ containerization, pipelines, and infrastructure are my own work.
 - **Containerization:** multi-stage Docker build (1.06 GB → 336 MB), non-root user, health checks
 - **Environment promotion:** dev → staging → prod, with every change going through a PR
 - **Runtime configuration:** one image, configured per environment, with no secrets baked in
-- **CI/CD:** *(Phase 2–4)*
-- **Infrastructure as code:** *(Phase 3)*
+- **CI/CD:** _(Phase 2–4)_
+- **Infrastructure as code:** _(Phase 3)_
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
 ## Project Phases
@@ -28,22 +28,22 @@ containerization, pipelines, and infrastructure are my own work.
 Each phase has its own write-up covering the design decisions and the
 problems I solved, plus a pull request into `dev` with the actual changes.
 
-| Phase | Status | Write-up |
-|---|---|---|
-| 1. Containerization with Docker and Docker Compose | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
-| 2. CI with GitHub Actions (lint, test, build, image scan) | Planned | |
-| 3. AWS infrastructure with Terraform | Planned | |
-| 4. Continuous deployment (dev → staging → prod) | Planned | |
-| 5. Monitoring and alerting | Planned | |
+| Phase                                                     | Status  | Write-up                                                             |
+| --------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
+| 1. Containerization with Docker and Docker Compose        | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
+| 2. CI with GitHub Actions (lint, test, build, image scan) | Planned |                                                                      |
+| 3. AWS infrastructure with Terraform                      | Planned |                                                                      |
+| 4. Continuous deployment (dev → staging → prod)           | Planned |                                                                      |
+| 5. Monitoring and alerting                                | Planned |                                                                      |
 
 ## Tech Stack
 
-| Layer | Tools |
-|---|---|
-| App | Next.js 15, React 19, MongoDB (Mongoose), Auth.js, Stripe |
-| Containers | Docker (multi-stage), Docker Compose |
-| CI/CD | GitHub Actions *(Phase 2)* |
-| Cloud | AWS, Terraform *(Phase 3)* |
+| Layer      | Tools                                                     |
+| ---------- | --------------------------------------------------------- |
+| App        | Next.js 15, React 19, MongoDB (Mongoose), Auth.js, Stripe |
+| Containers | Docker (multi-stage), Docker Compose                      |
+| CI/CD      | GitHub Actions _(Phase 2)_                                |
+| Cloud      | AWS, Terraform _(Phase 3)_                                |
 
 ## Branching Strategy
 
@@ -60,7 +60,7 @@ flowchart LR
 - Each branch maps to its own environment.
 
 **Why I chose this:** environment branches make it easy to see what is
-running where. The `prod` branch *is* production. The tradeoff is that each
+running where. The `prod` branch _is_ production. The tradeoff is that each
 branch builds its own image, so staging and prod aren't guaranteed to run the
 exact same artifact. The alternative is trunk-based development: one `main`
 branch, where the pipeline builds the image once and promotes that same image
@@ -102,6 +102,5 @@ local database.
 
 ## Known Issues
 
-- `/dashboard` can throw on a null session in one case. *(fix in progress)*
 - A few ESLint warnings remain; these will be fixed once CI enforces linting
   in Phase 2.

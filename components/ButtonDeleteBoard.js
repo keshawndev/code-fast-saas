@@ -10,7 +10,7 @@ const ButtonDeleteBoard = ({ boardId }) => {
   const handelDeleteBoard = async () => {
     try {
       const isUserSure = window.confirm(
-        "Are you sure you want to delete this board?"
+        "Are you sure you want to delete this board?",
       );
 
       if (isUserSure) {

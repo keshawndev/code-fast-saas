@@ -10,8 +10,8 @@ const options = {
 
 export default function getMongoClient() {
   if (!process.env.MONGO_URI) {
-    throw new Error('Invalid/Missing environment variable: "MONGO_URI"');                              
-  }                                                                                                    
+    throw new Error('Invalid/Missing environment variable: "MONGO_URI"');
+  }
   if (!globalThis._mongoClientPromise) {
     const client = new MongoClient(process.env.MONGO_URI, options);
     globalThis._mongoClientPromise = client.connect();

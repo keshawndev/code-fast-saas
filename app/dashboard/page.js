@@ -3,7 +3,7 @@ import FormNewBoard from "@/components/FormNewBoard";
 import { auth } from "@/auth";
 import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
-import Board from "@/models/Board";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import ButtonCheckout from "@/components/ButtonCheckout";
 import ButtonPortal from "@/components/ButtonPortal";
@@ -11,9 +11,19 @@ import ButtonPortal from "@/components/ButtonPortal";
 async function getUser() {
   const session = await auth();
 
+  if (!session?.user?.id) {
+    redirect("/");
+  }
+
   await connectMongo();
 
-  return await User.findById(session.user.id).populate("boards");
+  const user = await User.findById(session.user.id).populate("boards");
+
+  if (!user) {
+    redirect("/");
+  }
+
+  return user;
 }
 
 export default async function Dashboard() {

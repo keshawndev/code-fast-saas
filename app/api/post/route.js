@@ -21,14 +21,14 @@ export async function POST(req) {
     if (!sanitizedTitle || !sanitizedDescription) {
       return NextResponse.json(
         { error: "Title and description are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!boardId) {
       return NextResponse.json(
         { error: "Board ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -63,7 +63,7 @@ export async function DELETE(req) {
     if (!postId) {
       return NextResponse.json(
         { error: "Post ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -76,7 +76,7 @@ export async function DELETE(req) {
     if (!user.hasAccess) {
       return NextResponse.json(
         { error: "Please Subscribe first" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 

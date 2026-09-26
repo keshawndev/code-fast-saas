@@ -11,7 +11,7 @@ export async function POST(req) {
     if (!body.successUrl || !body.cancelUrl) {
       return NextResponse.json(
         { error: "Success and cancel URLs are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

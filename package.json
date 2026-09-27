@@ -8,6 +8,11 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.18"
+    }
+  },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.7.4",
     "axios": "^1.7.9",

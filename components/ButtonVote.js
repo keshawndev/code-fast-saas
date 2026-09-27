@@ -13,7 +13,7 @@ const ButtonVote = ({ postId, initialVotes }) => {
   useEffect(() => {
     const hasVotedStoredValue = localStorage.getItem(localStorageKeyName);
     setHasVoted(hasVotedStoredValue === "true");
-  }, []);
+  }, [localStorageKeyName]);
 
   const handleVote = async () => {
     if (isVoting) return;

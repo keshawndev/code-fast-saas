@@ -100,8 +100,3 @@ mode, and Google OAuth credentials.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the
 local database.
-
-## Known Issues
-
-- Four ESLint warnings remain. CI now fails on them, and fixing them is the
-  next step in Phase 2.

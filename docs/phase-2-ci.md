@@ -1,8 +1,8 @@
 # Phase 2: Continuous Integration
 
-> **Status: in progress.** The lint gate is working. Still to do: fix the
-> existing ESLint warnings, add a Docker build job and an image vulnerability
-> scan, and require passing checks on `dev`, `staging`, and `prod`.
+> **Status: in progress.** The lint gate is working and the codebase is clean.
+> Still to do: add a Docker build job and an image vulnerability scan, and
+> require passing checks on `dev`, `staging`, and `prod`.
 
 **Goal:** every change is checked automatically, on a clean machine, before it
 can merge into an environment branch.
@@ -16,7 +16,7 @@ _So far. Final numbers will be added when the phase is complete._
 |                          | Before                                | After                                         |
 | ------------------------ | ------------------------------------- | --------------------------------------------- |
 | Checks on a pull request | None (I ran the build by hand)        | Lint runs automatically on every push to a PR |
-| ESLint warnings          | 4, printed and ignored in every build | 4, and they now fail the check                |
+| ESLint warnings          | 4, printed and ignored in every build | 0, and any new warning fails the check        |
 | Lint job duration        | n/a                                   | ~21s (npm download cache restored)            |
 
 ## What I Built
@@ -66,6 +66,12 @@ _So far. Final numbers will be added when the phase is complete._
 - **Cause:** the job log showed `npm warn Unknown cli config "--max-warnings"`, and the command npm ran was `> next lint`, without the flag. `npm run` reads flags after the script name as its own config options, so the flag never reached ESLint. I confirmed this by calling `npx next lint --max-warnings=0` directly, and it exited with code 1.
 - **Fix:** `npm run lint -- --max-warnings=0`. The `--` tells npm to stop reading flags and pass the rest to the script. The next run showed `> next lint --max-warnings=0` and failed with exit code 1, as expected.
 
+### 4. Clearing the warnings the gate exposed
+
+- **Problem:** with the gate working, CI failed on four warnings that had been printed, and ignored, in every build since Phase 1.
+- **Cause:** three were dead code (two unused imports and an unused `data` variable). The fourth was a real bug: `ButtonVote`'s `useEffect` reads a `localStorage` key built from `postId`, but had an empty dependency array. If React reused the component for a different post, it would keep showing the previous post's voted state.
+- **Fix:** removed the dead code. For `data`, I kept the `await axios.post(...)` so the request still runs and errors still reach the `catch`. Added `localStorageKeyName` to the effect's dependencies instead of disabling the rule. It's a string, so the effect only reruns when the post actually changes. CI went green with `✔ No ESLint warnings or errors`.
+
 ## What I Learned
 
 - CI only reads **exit codes**. Output text, warnings, and yellow
@@ -74,6 +80,9 @@ _So far. Final numbers will be added when the phase is complete._
   annotations.
 - When adding a gate, **predict that it will fail, then prove it.** A check
   that can't fail is worse than no check, because it looks like protection.
+- Lint warnings aren't all cosmetic. `react-hooks/exhaustive-deps` pointed
+  at real stale-state bugs, and suppressing it with a comment would have
+  hidden that.
 - To isolate a bug, take one layer away (here, calling the tool directly
   instead of through `npm run`) and see whether the behavior changes.
 - `next lint` is deprecated and will be removed in Next.js 16. Moving to the

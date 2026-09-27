@@ -42,6 +42,7 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: code-fast-saas:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -50,4 +51,3 @@ jobs:
         run: |
           docker run -d --name app -p 3000:3000 code-fast-saas:ci
           curl --fail --retry 10 --retry-connrefused --retry-delay 2 http://localhost:3000/api/health
-          

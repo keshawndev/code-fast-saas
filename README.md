@@ -16,10 +16,10 @@ containerization, pipelines, and infrastructure are my own work.
 
 ## What This Project Demonstrates
 
-- **Containerization:** multi-stage Docker build (1.06 GB → 336 MB), non-root user, health checks
+- **Containerization:** multi-stage Docker build (1.06 GB → 336 MB), non-root user, no package managers in the runtime image, health checks
 - **Environment promotion:** dev → staging → prod, with every change going through a PR
 - **Runtime configuration:** one image, configured per environment, with no secrets baked in
-- **CI:** GitHub Actions runs lint (warnings fail the build), a cached Docker build, and a container smoke test on every PR _(Phase 2, in progress)_
+- **CI:** GitHub Actions runs lint (warnings fail the build), a cached Docker build, a container smoke test, and a Trivy vulnerability scan (HIGH/CRITICAL fail the build) on every PR _(Phase 2, in progress)_
 - **CD:** _(Phase 4)_
 - **Infrastructure as code:** _(Phase 3)_
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)

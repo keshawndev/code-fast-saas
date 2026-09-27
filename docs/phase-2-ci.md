@@ -1,8 +1,8 @@
 # Phase 2: Continuous Integration
 
-> **Status: in progress.** Lint and Docker build jobs are working. Still to
-> do: add an image vulnerability scan, and require passing checks on `dev`,
-> `staging`, and `prod`.
+> **Status: in progress.** Lint, Docker build, smoke test, and vulnerability
+> scan are working. Still to do: require passing checks on `dev`, `staging`,
+> and `prod`, and keep dependencies and actions updated automatically.
 
 **Goal:** every change is checked automatically, on a clean machine, before it
 can merge into an environment branch.
@@ -13,18 +13,23 @@ can merge into an environment branch.
 
 _So far. Final numbers will be added when the phase is complete._
 
-|                           | Before                                | After                                                       |
-| ------------------------- | ------------------------------------- | ----------------------------------------------------------- |
-| Checks on a pull request  | None (I ran the build by hand)        | Lint, Docker build, and smoke test on every push to a PR    |
-| ESLint warnings           | 4, printed and ignored in every build | 0, and any new warning fails the check                      |
-| Lint job duration         | n/a                                   | ~20s (npm download cache restored)                          |
-| Docker build job duration | n/a                                   | 2m19s with no cache → 1m20s with GitHub Actions layer cache |
+|                               | Before                                | After                                                          |
+| ----------------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| Checks on a pull request      | None (I ran the build by hand)        | Lint, Docker build, smoke test, and image scan on every push   |
+| ESLint warnings               | 4, printed and ignored in every build | 0, and any new warning fails the check                         |
+| HIGH/CRITICAL CVEs in image   | 6 (unknown until the first scan)      | 0, and any new fixable one fails the check                     |
+| Package managers in runtime   | npm, npx, corepack, yarn              | None (only `node`)                                             |
+| Lint job duration             | n/a                                   | ~20s (npm download cache restored)                             |
+| Docker build job duration     | n/a                                   | 2m19s with no cache → 1m20s with GitHub Actions layer cache    |
+| Image size                    | 336 MB                                | 336 MB (removing npm hides it but doesn't shrink base layers)  |
 
 ## What I Built
 
-| File                                                      | Purpose                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions workflow: lint job, then a Docker build and smoke test job   |
+| File                                                      | Purpose                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions workflow: lint job, then build → smoke test → Trivy scan in one job          |
+| [`Dockerfile`](../Dockerfile)                             | Runtime stage now removes npm, npx, corepack, and yarn, which the running app doesn't need  |
+| [`package.json`](../package.json)                         | `overrides` forces Next.js's bundled postcss to a patched 8.5.x                             |
 
 ## Design Decisions
 
@@ -56,6 +61,30 @@ _So far. Final numbers will be added when the phase is complete._
   `cache-to: type=gha,mode=max` caches every build stage, including the
   slow `npm ci` layer, between runs on fresh VMs. `push: false` for now;
   pushing to a registry comes in Phase 4.
+- **Build, test, and scan in one job:** the smoke test and the Trivy scan
+  run on the same machine as the build, so they check the exact image that
+  was built. (Jobs run on separate VMs and don't share Docker images; see
+  Problem 7.) Later, when the pipeline pushes to a registry, the pushed
+  image will be the one that was scanned.
+- **Scan policy:** fail on `HIGH` and `CRITICAL`, with `ignore-unfixed:
+  true`, and `exit-code: 1` set explicitly (the action's default exits 0
+  even when it finds vulnerabilities). Failing on every severity would
+  keep the pipeline permanently red, and a permanently red check gets
+  ignored. When a finding has no fix, the plan is to accept the risk in a
+  `.trivyignore` with a reason and a review date, not to loosen the gate.
+- **Third-party action pinned to a commit SHA:** `aquasecurity/trivy-action`
+  is pinned to a full SHA with a `# v0.36.0` comment. Tags can be moved to
+  point at different code, and SHAs can't. That action had its own
+  published security advisory in February 2026.
+- **Ship only what runs:** the runtime image runs `node server.js`, so npm,
+  npx, corepack, and yarn are removed from the runner stage. That cleared
+  four CVEs and removes tools an attacker could use from a shell in the
+  container. The build stages keep npm.
+- **Patch transitive dependencies with `overrides`:** Next.js 15 pins its
+  own postcss 8.4.31, even in its latest 15.x release. Next 16 fixes it,
+  but that's a major upgrade outside this PR's scope. An npm override
+  forces the patched 8.5.x line, which is API-compatible (Next 16 uses it),
+  and CI's build and smoke test confirm it works.
 - **Draft PR while building:** the PR was opened as a draft early, so CI runs
   on every push while the work is still in progress.
 
@@ -97,6 +126,24 @@ _So far. Final numbers will be added when the phase is complete._
 - **Cause:** `docker run -d` returns when the container starts, not when the app inside is listening. Docker's port proxy accepts connections on the host right away, and resets them while nothing is listening in the container yet. The curl command used `--retry-connrefused`, which only retries a *refused* connection (exit 7), not a *reset* (exit 56), so curl gave up after one try. I reproduced it locally by running `docker run` and `curl` together, with no gap between them.
 - **Fix:** switched to `--retry-all-errors`. With `--fail`, a real HTTP error still fails the check after 10 retries (~20s), so the check can still fail, just not on a startup race. Confirmed locally (a reset on attempt 1, `{"status":"ok"}` on attempt 2) and in CI.
 
+### 7. The scan job couldn't find the image the build job had just built
+
+- **Problem:** I first put the Trivy scan in its own `scan` job with `needs: build`. It failed with `unable to find the specified image "code-fast-saas:ci"`, followed by four sub-errors, including `permission denied` for containerd and `UNAUTHORIZED` from Docker Hub.
+- **Cause:** Trivy tries several image sources in turn, so only the first sub-error mattered: Docker said `No such image`. The permission and auth errors were fallbacks failing afterward. I added a temporary `docker images` step to both jobs: the image was listed in the build job and missing in the scan job. Every job runs on a fresh VM, and `needs:` only controls order, not sharing.
+- **Fix:** moved the scan into the build job, after the smoke test, and removed the debug steps. Passing the image between jobs as an artifact (`docker save` + upload/download) would also work, but it adds ~237 MB of transfer to every run.
+
+### 8. The scanner found six HIGH CVEs, and the obvious fix didn't take
+
+- **Problem:** the first working scan failed on six HIGH vulnerabilities, all with fixed versions available.
+- **Cause:** I located each package inside the image with `docker run --entrypoint sh ... find`. Four (in `brace-expansion`, `ip-address`, and `tar`) were inside **npm**, which comes with the `node:24-alpine` base image, but the running app never uses npm. Two were in **postcss 8.4.31**, which Next.js pins for itself. After I added an `overrides` rule for postcss, the scan still showed 8.4.31. I had only changed `package.json`, and `npm ci` installs exactly what `package-lock.json` says. It didn't warn that the two files disagreed. Running `npm install` still didn't update it: npm kept the version that was already locked. `npm ls postcss` showed the mismatch: `postcss@8.4.31 invalid: "^8.5.18"`.
+- **Fix:** removed npm, npx, corepack, and yarn in the runtime stage (6 → 2 findings). For postcss, I got stuck and had my AI mentor walk me through the fix: remove the stale `next/node_modules/postcss` entry from the lockfile, then regenerate it so npm resolved it again under the override (2 → 0). Next.js now shares the top-level `postcss@8.5.28`.
+
+### 9. My local npm rewrote parts of the lockfile it shouldn't have
+
+- **Problem:** my first lockfile commit for the postcss fix also contained 90 unrelated deleted lines, all `"libc": ["glibc"]` or `["musl"]` entries.
+- **Cause:** toolchain drift. My WSL environment had Node 22 / npm 10, while the Dockerfile and CI use Node 24 / npm 11. npm 11 records which C library each native binary needs, and npm 10 dropped that metadata when it rewrote the file. That matters because the Alpine image uses musl.
+- **Fix:** restored the lockfile and regenerated it inside the same image CI uses (`docker run -v "$PWD":/w -w /w node:24-alpine npm install --package-lock-only --ignore-scripts`). The final diff was only the 29 lines of the stale postcss entry. Follow-up: run Node 24 locally and add an `.nvmrc`, so local tools match CI.
+
 ## What I Learned
 
 - CI only reads **exit codes**. Output text, warnings, and yellow
@@ -124,5 +171,22 @@ _So far. Final numbers will be added when the phase is complete._
   repo's permissions. I use official GitHub and Docker actions pinned to
   a version. For third-party actions, pinning to a commit SHA is safer,
   because tags can be moved.
+- When a tool tries several fallbacks, the first error is usually the real
+  one. Later "permission denied" and "unauthorized" messages were just
+  fallbacks failing.
+- Jobs don't share machines. `needs:` sets order, not state. Anything a
+  later job needs has to be passed explicitly.
+- When you can't see a CI machine's state, add a temporary step that prints
+  it (`docker images`), then remove it.
+- Triage a CVE before fixing it: where is it, does the running app use it,
+  and is there a fix? Two different answers led to two different fixes.
+- Deleting files in a later Docker layer hides them but doesn't shrink the
+  image, because the bytes stay in the base layers.
+- `package.json` holds rules and `package-lock.json` holds exact versions.
+  `npm ci` only reads the lockfile, so a dependency change isn't real until
+  the lockfile changes, and the scan is what proved it hadn't.
+- The same command can give different results on different tool versions.
+  Run tools that write shared files (like lockfiles) with the same version
+  CI uses.
 - `next lint` is deprecated and will be removed in Next.js 16. Moving to the
   ESLint CLI is a follow-up for the Next.js upgrade.

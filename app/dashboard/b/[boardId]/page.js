@@ -4,7 +4,6 @@ import connectMongo from "@/libs/mongoose";
 import Board from "@/models/Board";
 import Post from "@/models/Post";
 import { auth } from "@/auth";
-import ButtonLogin from "@/components/ButtonLogin";
 import CardBoardLink from "@/components/CardBoardLink";
 import ButtonDeleteBoard from "@/components/ButtonDeleteBoard";
 import CardPostAdmin from "@/components/CardPostAdmin";

@@ -16,10 +16,13 @@ containerization, pipelines, and infrastructure are my own work.
 
 ## What This Project Demonstrates
 
-- **Containerization:** multi-stage Docker build (1.06 GB → 336 MB), non-root user, health checks
+- **Containerization:** multi-stage Docker build (1.06 GB → 336 MB), non-root user, no package managers in the runtime image, health checks
 - **Environment promotion:** dev → staging → prod, with every change going through a PR
 - **Runtime configuration:** one image, configured per environment, with no secrets baked in
-- **CI/CD:** _(Phase 2–4)_
+- **CI:** GitHub Actions runs lint (warnings fail the build), a cached Docker build, a container smoke test, and a Trivy vulnerability scan (HIGH/CRITICAL fail the build) on every PR
+- **Branch protection:** `dev`, `staging`, and `prod` accept changes only through PRs with passing checks
+- **Dependency updates:** weekly Dependabot PRs into `dev`, promoted like any other change
+- **CD:** _(Phase 4)_
 - **Infrastructure as code:** _(Phase 3)_
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
@@ -28,13 +31,13 @@ containerization, pipelines, and infrastructure are my own work.
 Each phase has its own write-up covering the design decisions and the
 problems I solved, plus a pull request into `dev` with the actual changes.
 
-| Phase                                                     | Status  | Write-up                                                             |
-| --------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
-| 1. Containerization with Docker and Docker Compose        | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
-| 2. CI with GitHub Actions (lint, test, build, image scan) | Planned |                                                                      |
-| 3. AWS infrastructure with Terraform                      | Planned |                                                                      |
-| 4. Continuous deployment (dev → staging → prod)           | Planned |                                                                      |
-| 5. Monitoring and alerting                                | Planned |                                                                      |
+| Phase                                                           | Status  | Write-up                                                             |
+| --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
+| 1. Containerization with Docker and Docker Compose              | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
+| 2. CI with GitHub Actions (lint, build, smoke test, image scan) | ✅ Done | [docs/phase-2-ci.md](docs/phase-2-ci.md)                             |
+| 3. AWS infrastructure with Terraform                            | Planned |                                                                      |
+| 4. Continuous deployment (dev → staging → prod)                 | Planned |                                                                      |
+| 5. Monitoring and alerting                                      | Planned |                                                                      |
 
 ## Tech Stack
 
@@ -42,7 +45,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | ---------- | --------------------------------------------------------- |
 | App        | Next.js 15, React 19, MongoDB (Mongoose), Auth.js, Stripe |
 | Containers | Docker (multi-stage), Docker Compose                      |
-| CI/CD      | GitHub Actions _(Phase 2)_                                |
+| CI/CD      | GitHub Actions                                            |
 | Cloud      | AWS, Terraform _(Phase 3)_                                |
 
 ## Branching Strategy
@@ -99,8 +102,3 @@ mode, and Google OAuth credentials.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the
 local database.
-
-## Known Issues
-
-- A few ESLint warnings remain; these will be fixed once CI enforces linting
-  in Phase 2.

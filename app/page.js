@@ -4,7 +4,6 @@ import FAQQListItem from "@/components/FAQListItem";
 import Image from "next/image";
 import productDemo from "@/app/productDemo.jpeg";
 import { auth } from "@/auth";
-import ButtonCheckout from "@/components/ButtonCheckout";
 
 export default async function Home() {
   const session = await auth();

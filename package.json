@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
-    "daisyui": "^4.12.23",
+    "daisyui": "^5.7.46",
     "eslint": "^9.18.0",
     "eslint-config-next": "^15.1.5",
     "postcss": "^8.5.1",

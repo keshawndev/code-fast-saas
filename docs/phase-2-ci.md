@@ -99,12 +99,11 @@ can merge into an environment branch.
   step inside `Docker build`, so requiring `Docker build` enforces the scan
   too.
 - **Dependabot through the promotion path:** weekly checks for GitHub
-  Actions and npm. All action updates come as one PR. npm minor and patch
-  updates are grouped, and each major update comes as its own PR, since
-  majors can break things. `target-branch: dev` sends every update through
-  `dev → staging → prod` like any other change, instead of straight to the
-  default branch (`prod`). For npm, **major updates are ignored** and
-  tracked as planned upgrades in
+  Actions and npm. All action updates, including majors, come as one PR,
+  and npm minor and patch updates come as another. `target-branch: dev`
+  sends every update through `dev → staging → prod` like any other change,
+  instead of straight to the default branch (`prod`). For npm, **major
+  updates are ignored** and tracked as planned upgrades in
   [#16](https://github.com/keshawndev/code-fast-saas/issues/16), because
   CI can't prove a major works (see Problem 14). GitHub Actions majors still
   come through, because CI runs the new actions.
@@ -197,9 +196,9 @@ can merge into an environment branch.
 
 ### 14. Dependabot's first run: five major upgrades, most of them green
 
-- **Problem:** once the config reached `prod`, Dependabot opened six PRs into `dev`: one grouped GitHub Actions update (#9) and five npm **major** upgrades (#10–#14), including Stripe 17 → 22 and Mongoose 8 → 9. Four more majors were queued behind `open-pull-requests-limit: 5`. Most of them passed CI.
+- **Problem:** once the config reached `prod`, Dependabot opened six PRs into `dev`: one grouped GitHub Actions update (#9) and five npm **major** upgrades (#10–#14), including Stripe 17 → 22 and Mongoose 8 → 9. Three more (`next`, `eslint`, and `tailwindcss`) were queued behind `open-pull-requests-limit: 5`. Most of them passed CI.
 - **Cause:** every outdated direct dependency was a major version behind (`npm outdated` showed no minor or patch updates, which is why no grouped npm PR appeared). CI only lints, builds, smoke-tests `/api/health`, and scans the image. It never calls Stripe, MongoDB, or auth, so a green check didn't show those upgrades work. For the Actions PR, CI actually runs the updated actions, so green there is real evidence.
-- **Fix:** read the release notes for the four action majors (no breaking changes affected this workflow) and merged #9. Added an npm `ignore` rule for `version-update:semver-major` (#15), created tracking issue #16 listing all nine majors with what each needs tested, and closed #10–#14 with a link to it. Open Dependabot PRs use up the PR limit, so leaving them open would have blocked routine updates. After #15 was promoted to `prod` (#17, #18), Dependabot reran and opened nothing.
+- **Fix:** read the release notes for the four action majors (no breaking changes affected this workflow) and merged #9. Added an npm `ignore` rule for `version-update:semver-major` (#15), created tracking issue #16 listing all eight majors with what each needs tested, and closed #10–#14 with a link to it. Open Dependabot PRs use up the PR limit, so leaving them open would have blocked routine updates. After #15 was promoted to `prod` (#17, #18), Dependabot reran and opened nothing.
 
 ## What I Learned
 

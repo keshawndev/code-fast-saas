@@ -1,35 +1,35 @@
 # Phase 2: Continuous Integration
 
-> **Status: in progress.** Lint, Docker build, smoke test, and vulnerability
-> scan are working. Still to do: require passing checks on `dev`, `staging`,
-> and `prod`, and keep dependencies and actions updated automatically.
-
 **Goal:** every change is checked automatically, on a clean machine, before it
 can merge into an environment branch.
 
-**Pull request:** [#6](https://github.com/keshawndev/code-fast-saas/pull/6) (draft)
+**Pull request:** [#6](https://github.com/keshawndev/code-fast-saas/pull/6)
 
 ## Results
 
-_So far. Final numbers will be added when the phase is complete._
-
-|                               | Before                                | After                                                          |
-| ----------------------------- | ------------------------------------- | -------------------------------------------------------------- |
-| Checks on a pull request      | None (I ran the build by hand)        | Lint, Docker build, smoke test, and image scan on every push   |
-| ESLint warnings               | 4, printed and ignored in every build | 0, and any new warning fails the check                         |
-| HIGH/CRITICAL CVEs in image   | 6 (unknown until the first scan)      | 0, and any new fixable one fails the check                     |
-| Package managers in runtime   | npm, npx, corepack, yarn              | None (only `node`)                                             |
-| Lint job duration             | n/a                                   | ~20s (npm download cache restored)                             |
-| Docker build job duration     | n/a                                   | 2m19s with no cache → 1m20s with GitHub Actions layer cache    |
-| Image size                    | 336 MB                                | 336 MB (removing npm hides it but doesn't shrink base layers)  |
+|                             | Before                                     | After                                                         |
+| --------------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| Checks on a pull request    | None (I ran the build by hand)             | Lint, Docker build, smoke test, and image scan on every push  |
+| ESLint warnings             | 4, printed and ignored in every build      | 0, and any new warning fails the check                        |
+| HIGH/CRITICAL CVEs in image | 6 (unknown until the first scan)           | 0, and any new fixable one fails the check                    |
+| Package managers in runtime | npm, npx, corepack, yarn                   | None (only `node`)                                            |
+| Lint job duration           | n/a                                        | ~20s (npm download cache restored)                            |
+| Docker build job duration   | n/a                                        | 2m19s with no cache → 1m20s with GitHub Actions layer cache   |
+| Image size                  | 336 MB                                     | 336 MB (removing npm hides it but doesn't shrink base layers) |
+| Protected branches          | 0                                          | 3 (`dev`, `staging`, `prod`): PR-only, green checks required  |
+| Dependency updates          | Manual, whenever I noticed                 | Weekly Dependabot PRs into `dev`, tested by CI                |
+| Node version definitions    | 3, disagreeing (local 22, CI 24, image 24) | `.nvmrc` for local and CI, plus the Dockerfile base image     |
 
 ## What I Built
 
-| File                                                      | Purpose                                                                                     |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions workflow: lint job, then build → smoke test → Trivy scan in one job          |
-| [`Dockerfile`](../Dockerfile)                             | Runtime stage now removes npm, npx, corepack, and yarn, which the running app doesn't need  |
-| [`package.json`](../package.json)                         | `overrides` forces Next.js's bundled postcss to a patched 8.5.x                             |
+| File                                                      | Purpose                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions workflow: lint job, then build → smoke test → Trivy scan in one job         |
+| [`Dockerfile`](../Dockerfile)                             | Runtime stage now removes npm, npx, corepack, and yarn, which the running app doesn't need |
+| [`package.json`](../package.json)                         | `overrides` forces Next.js's bundled postcss to a patched 8.5.x                            |
+| [`.github/dependabot.yml`](../.github/dependabot.yml)     | Weekly update PRs for GitHub Actions and npm, grouped, targeting `dev`                     |
+| [`.nvmrc`](../.nvmrc)                                     | Node 24, read by nvm locally and by `setup-node` in CI                                     |
+| `environment-branches` ruleset (GitHub settings)          | Branch protection for `dev`, `staging`, and `prod`. Not stored in the repo.                |
 
 ## Design Decisions
 
@@ -85,6 +85,29 @@ _So far. Final numbers will be added when the phase is complete._
   but that's a major upgrade outside this PR's scope. An npm override
   forces the patched 8.5.x line, which is API-compatible (Next 16 uses it),
   and CI's build and smoke test confirm it works.
+- **Branch protection as a ruleset:** one ruleset covers `dev`, `staging`,
+  and `prod` (as three separate patterns). It requires a pull request,
+  requires `Lint` and `Docker build` to pass, allows merge commits only,
+  and blocks force pushes and deletion. Required approvals are 0 because
+  GitHub doesn't let you approve your own PR, and on a team it would be at
+  least 1. The bypass list is empty, so the rules apply to me as admin too.
+  "Require branches to be up to date" is off, because solo it adds a step
+  to every PR without much benefit. Feature branches aren't protected;
+  they're short-lived workspaces that need normal pushes, force pushes, and
+  deletion.
+- **Only the checks that exist are required:** the vulnerability scan is a
+  step inside `Docker build`, so requiring `Docker build` enforces the scan
+  too.
+- **Dependabot through the promotion path:** weekly checks for GitHub
+  Actions and npm. All action updates come as one PR. npm minor and patch
+  updates are grouped, and each major update comes as its own PR, since
+  majors can break things. `target-branch: dev` sends every update through
+  `dev → staging → prod` like any other change, instead of straight to the
+  default branch (`prod`).
+- **One Node version file:** `.nvmrc` says `24`. nvm reads it locally, and
+  `setup-node` reads it in CI with `node-version-file`, so both resolve to
+  the same release (v24.21.0). The Dockerfile's `node:24-alpine` is the one
+  remaining place to update when the version changes.
 - **Draft PR while building:** the PR was opened as a draft early, so CI runs
   on every push while the work is still in progress.
 
@@ -144,6 +167,30 @@ _So far. Final numbers will be added when the phase is complete._
 - **Cause:** toolchain drift. My WSL environment had Node 22 / npm 10, while the Dockerfile and CI use Node 24 / npm 11. npm 11 records which C library each native binary needs, and npm 10 dropped that metadata when it rewrote the file. That matters because the Alpine image uses musl.
 - **Fix:** restored the lockfile and regenerated it inside the same image CI uses (`docker run -v "$PWD":/w -w /w node:24-alpine npm install --package-lock-only --ignore-scripts`). The final diff was only the 29 lines of the stale postcss entry. Follow-up: run Node 24 locally and add an `.nvmrc`, so local tools match CI.
 
+### 10. The ruleset was active, but nothing was protected
+
+- **Problem:** after creating the ruleset, `gh api repos/.../rules/branches/dev` returned nothing, even though the settings page said the ruleset was "Active."
+- **Cause:** reading the ruleset through the API showed a single target pattern: `refs/heads/dev, staging, prod`. I'd entered all three branches in one field. Each target is one branch-name pattern, so it only matched a branch literally named `dev, staging, prod`. Like the workflow triggers in Problem 1, a pattern that matches nothing fails silently.
+- **Fix:** replaced it with three patterns (`dev`, `staging`, `prod`) and verified the effective rules on each branch.
+
+### 11. A required check that could never report
+
+- **Problem:** with protection working, PR #6 showed `Image scan — Expected — Waiting for status to be reported`, which would block the merge forever.
+- **Cause:** I'd added `Image scan` as a required check, but that was the name of the separate scan job from Problem 7, which no longer existed. Required checks are matched by name, and GitHub can't tell a job that was removed from one that hasn't started yet.
+- **Fix:** removed it from the ruleset, leaving `Lint` and `Docker build`. The PR's merge state went to `CLEAN`. Lesson: when renaming or removing a CI job, update the required checks in the same change.
+
+### 12. Dependabot would have skipped dev and staging
+
+- **Problem:** before the config took effect, I had to predict which branch Dependabot would read it from and which branch it would open PRs against. I guessed "all of them." In fact, Dependabot only reads its config from the **default branch** (`prod` here), and opens PRs there by default. Dependency updates would have gone straight to production.
+- **Cause:** Dependabot treats the default branch as the source of truth. This repo's default branch is `prod`, not the first environment.
+- **Fix:** added `target-branch: dev`. My first commit only added it to the `github-actions` entry, and a review of the committed file caught the missing one on `npm`. Each entry under `updates:` is configured separately.
+
+### 13. New terminals still ran Node 22 after installing Node 24
+
+- **Problem:** after `nvm install` and `nvm alias default 24`, a new terminal still reported `v22.19.0`.
+- **Cause:** `which node` pointed to a manually installed Node in `~/.local/node`. `echo $PATH` showed that folder ahead of nvm's, because a line in `~/.bashrc` that ran **after** nvm loaded put it at the front (and `~/.profile` did the same earlier). The shell runs the first `node` it finds in `PATH`. I understood the cause but wasn't sure how to change shell startup files safely, so my AI mentor made the edit.
+- **Fix:** moved `~/.local/node/bin` from the front of `PATH` to the end in both files, instead of deleting it, because Claude Code was also installed there. That surfaced one more mismatch: nvm's Node 24 had npm 12 installed globally, while CI uses npm 11. Pinned it with `npm install -g npm@11`. A fresh shell now resolves Node v24.21.0 and npm 11, and CI resolves `.nvmrc` to the same v24.21.0.
+
 ## What I Learned
 
 - CI only reads **exit codes**. Output text, warnings, and yellow
@@ -188,5 +235,15 @@ _So far. Final numbers will be added when the phase is complete._
 - The same command can give different results on different tool versions.
   Run tools that write shared files (like lockfiles) with the same version
   CI uses.
+- Settings pages show what's configured, not what's enforced. Querying the
+  effective rules (`gh api .../rules/branches/<name>`) is how to verify
+  them.
+- Branch filters, ruleset targets, and required checks all match by name
+  or pattern, and they fail silently when nothing matches.
+- Automation has to follow the same path as people: a bot that opens PRs
+  straight into production skips every environment in between.
+- `PATH` is an ordered search list. `which` shows what actually runs, and
+  startup files decide the order. Check what depends on a setting before
+  removing it.
 - `next lint` is deprecated and will be removed in Next.js 16. Moving to the
   ESLint CLI is a follow-up for the Next.js upgrade.

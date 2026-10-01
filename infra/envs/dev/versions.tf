@@ -24,7 +24,7 @@ provider "aws" {
     tags = {
       Project   = "code-fast-saas"
       ManagedBy = "terraform"
-      Stack     = "bootstrap"
+      Stack     = "dev"
     }
   }
 }

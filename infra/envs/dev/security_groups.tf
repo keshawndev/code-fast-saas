@@ -27,8 +27,8 @@ resource "aws_security_group" "app" {
 resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
   security_group_id            = aws_security_group.app.id
   referenced_security_group_id = aws_security_group.alb.id
-  from_port                    = 80
-  to_port                      = 80
+  from_port                    = 3000
+  to_port                      = 3000
   ip_protocol                  = "tcp"
 }
 

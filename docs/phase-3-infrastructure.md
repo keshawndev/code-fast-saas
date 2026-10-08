@@ -6,16 +6,16 @@ rebuilt with one command.
 
 **Status:** in progress. The bootstrap stack is merged
 ([#21](https://github.com/keshawndev/code-fast-saas/pull/21)). The dev
-stack (network, security groups, IAM, ECS) is running on
-`feature/phase-3-dev-backend`. The load balancer, HTTPS, and end-to-end
-checks are next.
+stack (network, security groups, IAM, ECS, load balancer) is on
+`feature/phase-3-dev-backend`, and the app answers through the ALB over
+HTTP. HTTPS and end-to-end checks are next.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Internet] -->|":80"| ALB["ALB (next step)"]
-    ALB --> T["ECS Fargate task<br/>public subnet, app SG"]
+    U[Internet] -->|":80"| ALB[ALB]
+    ALB -->|":3000"| T["ECS Fargate task<br/>public subnet, app SG"]
     T -->|pull image| ECR[(ECR)]
     T -->|secrets at startup| SSM[(SSM Parameter Store)]
     T -->|logs| CW[(CloudWatch Logs)]
@@ -27,7 +27,7 @@ Terraform is split into two stacks with separate state:
 | Stack     | Folder             | State                                             | Lifecycle                                 | Contents                                                                 |
 | --------- | ------------------ | ------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
 | Bootstrap | `infra/bootstrap/` | Local file (gitignored)                           | Long-lived                                | Budget alarm, S3 state bucket, ECR repository                            |
-| Dev       | `infra/envs/dev/`  | `s3://…/dev/terraform.tfstate`, native S3 locking | **Destroyed at the end of every session** | VPC, subnets, security groups, IAM roles, ECS cluster/service, log group |
+| Dev       | `infra/envs/dev/`  | `s3://…/dev/terraform.tfstate`, native S3 locking | **Destroyed at the end of every session** | VPC, subnets, security groups, IAM roles, ECS cluster/service, log group, ALB |
 
 ## Results (so far)
 
@@ -41,6 +41,7 @@ Terraform is split into two stacks with separate state:
 | Secrets for the deployed app  | `.env.local` on my laptop                  | 7 SSM `SecureString` parameters, injected at container start, never in git, the image, or Terraform state |
 | Dev environment               | n/a                                        | One `terraform apply` creates it and one `terraform destroy` removes it                                   |
 | App on AWS                    | n/a                                        | Fargate task running, Next.js `Ready in 810ms` in CloudWatch Logs                                         |
+| Public endpoint               | n/a                                        | ALB DNS name, `/api/health` returns `200 OK` through the load balancer                                   |
 
 ## What I Built
 
@@ -55,6 +56,8 @@ Terraform is split into two stacks with separate state:
 | [`infra/envs/dev/security_groups.tf`](../infra/envs/dev/security_groups.tf) | ALB SG (HTTP from the internet) and app SG (only from the ALB SG)                  |
 | [`infra/envs/dev/iam.tf`](../infra/envs/dev/iam.tf)                         | ECS execution role (ECR, logs, SSM secrets) and an empty task role                 |
 | [`infra/envs/dev/ecs.tf`](../infra/envs/dev/ecs.tf)                         | Cluster, log group (7-day retention), Fargate task definition, service             |
+| [`infra/envs/dev/alb.tf`](../infra/envs/dev/alb.tf)                         | ALB, target group (`ip` targets, health check on `/api/health`), HTTP listener     |
+| [`infra/envs/dev/outputs.tf`](../infra/envs/dev/outputs.tf)                 | `app_url` output, used by scripts and `curl`                                       |
 | `terraform.tfvars.example` (both stacks)                                    | Documents required inputs. Real `terraform.tfvars` files are gitignored            |
 
 ## Design Decisions
@@ -163,6 +166,13 @@ Terraform is split into two stacks with separate state:
 - **Cause:** a relative path that didn't exist from my current directory. The commands after it still ran.
 - **Fix:** nothing was deleted. `prevent_destroy` on the state bucket blocked the whole plan, including the budget and ECR. Now I run `pwd` before every `destroy`, and only the dev stack is part of the end-of-session teardown.
 
+### 10. 504 Gateway Timeout from the load balancer
+
+- **Problem:** after adding the ALB, the app URL returned `504 Gateway Timeout`. (A planned drill.)
+- **Cause:** the target group sent traffic to the task on port 3000, where Next.js listens, but the app security group only allowed port 80 from the ALB. The security group silently dropped the packets, so the ALB timed out. The listener port (80, what browsers use) and the target port (3000, what the ALB uses to reach the task) are separate settings, and I had mixed them up in the security group.
+- **Fix:** changed the `app_from_alb` ingress rule to 3000. My first idea was to change the target group to 80, but the container logs (`Network: ...:3000`) showed nothing listens on 80, so that would have traded one failure for another.
+- **After the fix:** the response changed to `503`. ECS had already killed the unhealthy task, and the old target was **draining** for the default 300-second deregistration delay, so for a few minutes there was no healthy target at all. Once the replacement task passed two health checks, `/api/health` returned `200 OK`.
+
 ## What I Learned
 
 - **Read the plan's summary line first**, and predict it before running
@@ -201,13 +211,23 @@ found` for something that is obviously an argument is the giveaway.
   Shell variables and shorter commands avoid it.
 - Short-lived SSO credentials expire by design. `aws sso login` at the
   start of a session is the tradeoff for not having a permanent key.
+- Load balancer status codes say where the break is: 503 means no healthy
+  targets, 504 means a target exists but didn't answer in time (often a
+  security group dropping traffic), and 502 means it answered badly.
+- Trace a request hop by hop and check the port and the rule at each one.
+- A service that fails health checks gets replaced automatically, so the
+  status code can change while I'm still debugging. Check timestamps.
+- `depends_on` is for ordering Terraform can't see: the ECS service needs
+  the listener to exist, but nothing in the service references it.
+- A failed `$(...)` substitution doesn't stop the outer command. It runs
+  with an empty value (`curl: No host part in the URL`). Run the inner
+  command alone first.
 
 ## Still To Do
 
-- Application Load Balancer, target group, and listener
 - HTTPS with an ACM certificate and a subdomain (Google OAuth requires
   `https://` redirect URIs)
-- `APP_URL` / `AUTH_URL` set to the public URL
+- `APP_URL` / `AUTH_URL` switched to the HTTPS URL
 - End-to-end check: sign in, create a board, Stripe test checkout and
   webhook
 - Final teardown check, README update, and promotion PRs

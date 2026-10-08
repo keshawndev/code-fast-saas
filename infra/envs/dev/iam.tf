@@ -35,8 +35,8 @@ data "aws_iam_policy_document" "read_secrets" {
   }
 }
 
-resource "aws_iam_role_policy" "task_read_secrets" {
+resource "aws_iam_role_policy" "execution_read_secrets" {
   name   = "read-dev-secrets"
-  role   = aws_iam_role.task.id
+  role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.read_secrets.json
 }

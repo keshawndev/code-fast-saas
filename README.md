@@ -35,7 +35,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
 | 1. Containerization with Docker and Docker Compose              | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
 | 2. CI with GitHub Actions (lint, build, smoke test, image scan) | ✅ Done | [docs/phase-2-ci.md](docs/phase-2-ci.md)                             |
-| 3. AWS infrastructure with Terraform                            | Planned |                                                                      |
+| 3. AWS infrastructure with Terraform                            | 🚧 In progress | [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)     |
 | 4. Continuous deployment (dev → staging → prod)                 | Planned |                                                                      |
 | 5. Monitoring and alerting                                      | Planned |                                                                      |
 

@@ -14,6 +14,7 @@ locals {
   ]
 }
 
+
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/code-fast-saas-dev"
   retention_in_days = 7
@@ -53,6 +54,8 @@ resource "aws_ecs_task_definition" "app" {
       environment = [
         { name = "AUTH_TRUST_HOST", value = "true" },
         { name = "STRIPE_PRICE_ID", value = var.stripe_price_id },
+        { name = "APP_URL", value = "http://${aws_lb.main.dns_name}" },
+        { name = "AUTH_URL", value = "http://${aws_lb.main.dns_name}" },
       ]
 
       secrets = [
@@ -81,9 +84,19 @@ resource "aws_ecs_service" "app" {
   launch_type     = "FARGATE"
   name            = "app"
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app.arn
+    container_name   = "app"
+    container_port   = 3000
+  }
+
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.app.id]
     assign_public_ip = true
   }
+
+  health_check_grace_period_seconds = 60
+
+  depends_on = [aws_lb_listener.http]
 }

@@ -79,7 +79,7 @@ jobs:
         run: |
           for dir in infra/bootstrap infra/envs/dev; do
             echo "::group::$dir"
-            terraform -chdir=$dir init -input=false
+            terraform -chdir=$dir init -input=false -backend=false
             terraform -chdir=$dir validate
             echo "::endgroup::"
           done

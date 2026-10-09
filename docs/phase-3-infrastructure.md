@@ -230,6 +230,12 @@ Terraform is split into two stacks with separate state:
 - **Cause:** the tagging API's index lags behind the services. The security group rules no longer existed (`InvalidSecurityGroupRuleId.NotFound`), the ECS service and cluster showed `INACTIVE`, and the four task definition revisions were `INACTIVE`, because Terraform can only deregister task definitions, not delete them.
 - **Fix:** nothing needed fixing. I confirmed each item with its own service's API and checked what actually bills: no load balancers, clusters, VPCs, network interfaces, or Elastic IPs remained.
 
+### 16. New CVEs blocked a PR that didn't touch the app
+
+- **Problem:** the Phase 3 PR (only Terraform and docs) failed the Trivy gate with 2 HIGH vulnerabilities: `sharp` 0.35.4 (GHSA-wq5f-xc86-pv6w, in its bundled librsvg) and `source-map-js` 1.2.1 (CVE-2026-93749). Neither package appears in `package.json`.
+- **Cause:** Trivy downloads the latest vulnerability database on every run, and both advisories were published after the last green scan. Both packages are transitive: `sharp` comes from `next`, and `source-map-js` from `postcss`. The gate correctly reported that the image I would ship today had fixable HIGH findings, on whichever PR ran next.
+- **Fix:** triaged first. Fixes existed (0.35.5 and 1.2.2), and both were inside the version ranges the parent packages already accept, so no `package.json` change or override was needed. `npm update sharp source-map-js` refreshed only the lockfile (sharp, its 27 per-platform binary packages including the patched libvips, and source-map-js). I shipped that as its own PR (#24), then ran `gh pr update-branch 23` so the Phase 3 PR was re-tested against the fixed `dev`, and it passed.
+
 ## What I Learned
 
 - **Read the plan's summary line first**, and predict it before running
@@ -306,6 +312,10 @@ found` for something that is obviously an argument is the giveaway.
   quick inventory, not proof.
 - Cost is a design decision. Skipping the NAT gateway, destroying dev every
   session, and setting the budget first kept the whole phase under a dollar.
+
+- A scan gate can fail without any code change, because the advisory
+  database changes daily. Fixes for transitive dependencies usually belong
+  in the lockfile, not `package.json`. Ship them as their own PR.
 
 ## Known Issues and Follow-ups
 

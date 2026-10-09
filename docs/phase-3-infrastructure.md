@@ -8,8 +8,9 @@ rebuilt with one command.
 ([#21](https://github.com/keshawndev/code-fast-saas/pull/21)). The dev
 stack (network, security groups, IAM, ECS, load balancer, HTTPS) is on
 `feature/phase-3-dev-backend`, and the app is live at
-`https://project1.keshawnbarbary.com` while the dev stack is up.
-End-to-end checks (sign-in, Stripe) are next.
+`https://project1.keshawnbarbary.com` while the dev stack is up. All
+end-to-end flows pass: Google and email sign-in, Stripe test checkout with
+the webhook granting access, creating a board, and posting and voting.
 
 ## Architecture
 
@@ -45,6 +46,7 @@ Terraform is split into two stacks with separate state:
 | App on AWS                    | n/a                                        | Fargate task running, Next.js `Ready in 810ms` in CloudWatch Logs                                         |
 | Public endpoint               | n/a                                        | `https://project1.keshawnbarbary.com` (TLS 1.2/1.3, HTTP/2). `http://` returns a 301 redirect            |
 | DNS changes per session       | n/a                                        | None. The ALB's name changes on every apply, and the alias record follows it automatically               |
+| End-to-end flows on AWS       | n/a                                        | Google sign-in, email sign-in, Stripe checkout + webhook, board, post, vote: all working                |
 | Certificate validation        | n/a                                        | ACM DNS validation through Route 53 in about 1 second, auto-renewing                                    |
 
 ## What I Built
@@ -206,6 +208,18 @@ Terraform is split into two stacks with separate state:
 - **Cause:** the record's name was the zone's own name, its **apex**. Every zone has SOA and NS records at the apex, and DNS doesn't allow a CNAME to share a name with other records. A plain A record wouldn't work either, because an ALB has no fixed IPs.
 - **Fix:** a Route 53 **alias** A record pointing at the ALB (`aws_lb.main.dns_name` and the ALB's own `zone_id`). Route 53 answers with the ALB's current IPs. Re-running `apply` created only the missing record, and `curl` showed the 301 redirect and `HTTP/2 200` over HTTPS.
 
+### 13. "Invalid API key" from a key that was stored with its name
+
+- **Problem:** clicking Subscribe showed "Invalid Stripe API key." Nothing was logged, because the checkout route returns the error to the browser.
+- **Cause:** checking the stored value's prefix and length (without printing it) showed `STRIPE_A`, length 122. I had pasted the whole `.env.local` line, so the secret was `STRIPE_API_KEY=sk_test_...`. The other secrets were already proven by working features, so this was the only pasted one nothing had tested.
+- **Fix:** piped the value straight from `.env.local` into SSM (`grep | cut -d= -f2- | tr -d '"\r' | p STRIPE_API_KEY`) so nothing was pasted by hand, then called Stripe's `/v1/balance` with the stored key to test it without the app in between. Two of my checks along the way printed stale results, because pasting two commands at once merged them onto one line (`VAR=$(...) echo $VAR` expands the old value).
+
+### 14. The fixed key still didn't work
+
+- **Problem:** with the correct key in SSM (and Stripe accepting it directly), the app still reported an invalid key. (A planned drill.)
+- **Cause:** ECS fetches SSM secrets and injects them as environment variables **once, when a task starts**. The running task started before the fix, so it still had the old value. The new webhook signing secret had the same problem: the task still had the placeholder. I first assumed secrets were baked in at build time, but the CI smoke test runs the image with no secrets, which rules that out.
+- **Fix:** `aws ecs update-service --force-new-deployment` started a new task, which read the current values. After that, the test checkout succeeded, Stripe's webhook granted access, and creating a board, posting, and voting all worked.
+
 ## What I Learned
 
 - **Read the plan's summary line first**, and predict it before running
@@ -266,11 +280,21 @@ found` for something that is obviously an argument is the giveaway.
 - A provider warning can come from values left in state, not from my code.
   Check the file before changing it to quiet a warning.
 
+- End-to-end tests find what health checks can't. `/api/health` was
+  green the whole time, and every failure here was at an integration point
+  (OAuth redirect, email provider, Stripe key, webhook secret).
+- Changing a secret in SSM doesn't change a running task. Every secret
+  change needs a new deployment.
+- Check a stored secret's prefix and length, not its value, and test a
+  credential directly against its API to separate "bad key" from "bad app."
+- Check that IDs line up across systems: the Stripe price ID and the CLI's
+  account ID share the same account suffix, which confirmed both pointed
+  at the same Stripe account.
+
 ## Still To Do
 
-- Google OAuth redirect URI for `https://project1.keshawnbarbary.com`
-- End-to-end check: sign in, create a board, Stripe test checkout and
-  webhook
+- Check whether Chrome's "Dangerous site" warning comes from Google Safe
+  Browsing, and request a review if so
 - Final teardown check, README update, and promotion PRs
 
 ## Help and Sources

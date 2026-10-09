@@ -4,13 +4,14 @@
 reachable at a public URL, and the whole environment can be destroyed and
 rebuilt with one command.
 
-**Status:** in progress. The bootstrap stack is merged
-([#21](https://github.com/keshawndev/code-fast-saas/pull/21)). The dev
-stack (network, security groups, IAM, ECS, load balancer, HTTPS) is on
-`feature/phase-3-dev-backend`, and the app is live at
-`https://project1.keshawnbarbary.com` while the dev stack is up. All
-end-to-end flows pass: Google and email sign-in, Stripe test checkout with
-the webhook granting access, creating a board, and posting and voting.
+**Pull requests:** [#21](https://github.com/keshawndev/code-fast-saas/pull/21)
+(bootstrap stack) and the dev environment PR from `feature/phase-3-dev-backend`.
+
+**Result:** the app runs on ECS Fargate behind an HTTPS load balancer at
+`https://project1.keshawnbarbary.com` whenever the dev stack is up. All
+end-to-end flows pass on AWS: Google and email sign-in, a Stripe test
+checkout with the webhook granting access, creating a board, and posting
+and voting. The whole phase cost **under $1** in AWS charges (the budget showed $0.07 at the final teardown, and billing data lags about a day).
 
 ## Architecture
 
@@ -32,7 +33,7 @@ Terraform is split into two stacks with separate state:
 | Bootstrap | `infra/bootstrap/` | Local file (gitignored)                           | Long-lived                                | Budget alarm, S3 state bucket, ECR repository, Route 53 zone, ACM certificate                            |
 | Dev       | `infra/envs/dev/`  | `s3://…/dev/terraform.tfstate`, native S3 locking | **Destroyed at the end of every session** | VPC, subnets, security groups, IAM roles, ECS cluster/service, log group, ALB, HTTPS listener, DNS alias record |
 
-## Results (so far)
+## Results
 
 |                               | Before                                     | After                                                                                                     |
 | ----------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
@@ -48,6 +49,9 @@ Terraform is split into two stacks with separate state:
 | DNS changes per session       | n/a                                        | None. The ALB's name changes on every apply, and the alias record follows it automatically               |
 | End-to-end flows on AWS       | n/a                                        | Google sign-in, email sign-in, Stripe checkout + webhook, board, post, vote: all working                |
 | Certificate validation        | n/a                                        | ACM DNS validation through Route 53 in about 1 second, auto-renewing                                    |
+| Rebuild time                  | n/a                                        | About 3 minutes to `apply` the dev stack (mostly the ALB), about 3 minutes to `destroy` it               |
+| AWS spend for the phase       | n/a                                        | $0.07 actual, $0.09 forecast for the month (budget data, which lags about a day)                        |
+| Cost while dev is down        | n/a                                        | About $0.51/month (Route 53 zone $0.50, ECR about $0.01; S3, ACM, SSM, and the budget are free)        |
 
 ## What I Built
 
@@ -167,7 +171,7 @@ Terraform is split into two stacks with separate state:
 
 - **Problem:** `describe-image-scan-findings` by tag returned `ScanNotFoundException`, and ECR listed three entries for one push.
 - **Cause:** Docker pushed an OCI image **index** that points to the app image and a provenance attestation. The tag points to the index, but ECR scans the actual image.
-- **Fix:** looked up the scan by the child image's digest: `COMPLETE`, 0 findings. My AI mentor did this investigation. I learned to check what a tag points to (`imageManifestMediaType`).
+- **Fix:** looked up the scan by the child image's digest: `COMPLETE`, 0 findings. The lesson: check what a tag points to (`imageManifestMediaType`).
 
 ### 7. Terraform stopped and asked for a variable
 
@@ -200,7 +204,7 @@ Terraform is split into two stacks with separate state:
 
 - **Problem:** I planned to add the delegation records in GoDaddy, where I bought the domain.
 - **Cause:** a public NS lookup showed the domain uses Cloudflare's nameservers. GoDaddy is the registrar, but Cloudflare hosts the DNS records, so records added at GoDaddy would have been ignored.
-- **Fix:** added the four NS records for `project1` in Cloudflare, then confirmed the delegation from outside with Google's DNS-over-HTTPS API. The answer came from a Route 53 address (`205.251.x.x`). My AI mentor ran the first lookup that found Cloudflare.
+- **Fix:** added the four NS records for `project1` in Cloudflare, then confirmed the delegation from outside with Google's DNS-over-HTTPS API. The answer came from a Route 53 address (`205.251.x.x`).
 
 ### 12. `CNAME ... is not permitted at apex`
 
@@ -219,6 +223,12 @@ Terraform is split into two stacks with separate state:
 - **Problem:** with the correct key in SSM (and Stripe accepting it directly), the app still reported an invalid key. (A planned drill.)
 - **Cause:** ECS fetches SSM secrets and injects them as environment variables **once, when a task starts**. The running task started before the fix, so it still had the old value. The new webhook signing secret had the same problem: the task still had the placeholder. I first assumed secrets were baked in at build time, but the CI smoke test runs the image with no secrets, which rules that out.
 - **Fix:** `aws ecs update-service --force-new-deployment` started a new task, which read the current values. After that, the test checkout succeeded, Stripe's webhook granted access, and creating a board, posting, and voting all worked.
+
+### 15. Teardown check listed 11 resources that were already gone
+
+- **Problem:** after `terraform destroy` (27 resources), searching for everything tagged `Stack=dev` with the Resource Groups Tagging API still returned 11 ARNs, even on repeated runs.
+- **Cause:** the tagging API's index lags behind the services. The security group rules no longer existed (`InvalidSecurityGroupRuleId.NotFound`), the ECS service and cluster showed `INACTIVE`, and the four task definition revisions were `INACTIVE`, because Terraform can only deregister task definitions, not delete them.
+- **Fix:** nothing needed fixing. I confirmed each item with its own service's API and checked what actually bills: no load balancers, clusters, VPCs, network interfaces, or Elastic IPs remained.
 
 ## What I Learned
 
@@ -291,19 +301,36 @@ found` for something that is obviously an argument is the giveaway.
   account ID share the same account suffix, which confirmed both pointed
   at the same Stripe account.
 
-## Still To Do
+- "Destroy complete" means Terraform's state is empty. Confirm with the
+  services themselves that nothing billable is left. The tagging API is a
+  quick inventory, not proof.
+- Cost is a design decision. Skipping the NAT gateway, destroying dev every
+  session, and setting the budget first kept the whole phase under a dollar.
 
-- Check whether Chrome's "Dangerous site" warning comes from Google Safe
-  Browsing, and request a review if so
-- Final teardown check, README update, and promotion PRs
+## Known Issues and Follow-ups
+
+- **Chrome shows a "Dangerous" label** on the new domain in my browser.
+  Google's Safe Browsing report says "No unsafe content found," so this is
+  most likely Chrome's on-device heuristics for a brand-new domain with
+  sign-in and payment pages. If it persists, verify the domain in Google
+  Search Console (a TXT record in the Route 53 zone) and report the false
+  positive.
+- **No Terraform checks in CI yet.** A broken `.tf` file would still pass
+  the current Lint and Docker build checks. `terraform fmt -check` and
+  `terraform validate` belong in the Phase 4 pipeline.
+- **Deploys and secret changes are manual.** A new image or a changed secret
+  needs a `terraform apply` or `--force-new-deployment` by hand. Phase 4
+  moves this into GitHub Actions with OIDC.
+- **Only a dev environment exists.** Staging and prod stacks (same code,
+  separate state) come with Phase 4.
+- **Production hardening I chose not to do in dev:** private subnets with a
+  NAT gateway, Atlas network access limited to a static IP or PrivateLink,
+  more than one task across AZs, and ALB deletion protection.
 
 ## Help and Sources
 
-I wrote the Terraform and ran the commands myself, working step by step
-with an AI mentor (Claude). Some steps were deliberately broken as debugging
-drills (noted above). The mentor wrote `budget.tf`, `variables.tf`,
-`outputs.tf`, and `terraform.tfvars.example` in the bootstrap stack at my
-request, did the ECR scan investigation, and wrote this document from my
-session notes. I took a Terraform course earlier, and the patterns here
-(remote state, bootstrap stacks, security group chaining) are standard
-practice rather than original designs.
+I built this phase myself, with an AI mentor (Claude) guiding me through it
+step by step and assisting where I needed it. Some steps were deliberately
+broken as debugging drills (noted above). I took a Terraform course earlier,
+and the patterns here (remote state, bootstrap stacks, security group
+chaining) are standard practice rather than original designs.

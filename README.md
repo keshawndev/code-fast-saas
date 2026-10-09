@@ -6,9 +6,9 @@
 ## About This Project
 
 This is part of my **Cloud Build Log**, a series where I take an application
-through the full DevOps lifecycle by hand. I write every file and run every
-command myself, and I document the decisions I made and the problems I hit
-along the way.
+through the full DevOps lifecycle by hand. An AI mentor guides me through
+each phase, assists where I need it, and sets deliberate debugging drills.
+I document the decisions I made and the problems I hit along the way.
 
 The app is a feedback board where users post ideas and vote on them
 (Next.js, MongoDB, Auth.js, Stripe). It started as a course project; the
@@ -22,8 +22,12 @@ containerization, pipelines, and infrastructure are my own work.
 - **CI:** GitHub Actions runs lint (warnings fail the build), a cached Docker build, a container smoke test, and a Trivy vulnerability scan (HIGH/CRITICAL fail the build) on every PR
 - **Branch protection:** `dev`, `staging`, and `prod` accept changes only through PRs with passing checks
 - **Dependency updates:** weekly Dependabot PRs into `dev`, promoted like any other change
+- **Infrastructure as code:** Terraform for the whole AWS environment, split into a long-lived bootstrap stack and a dev stack that's created and destroyed every session, with remote state in S3 (versioned, encrypted, native locking)
+- **Cloud deployment:** ECS Fargate behind an Application Load Balancer, HTTPS with an ACM certificate, and a subdomain delegated from Cloudflare to Route 53
+- **Secrets management:** app secrets in SSM Parameter Store, injected at container start, never in git, the image, or Terraform state
+- **Least privilege:** IAM Identity Center (SSO) instead of access keys, separate ECS execution and task roles, security groups that only let the load balancer reach the app
+- **Cost control:** a $10 budget alarm created before anything else, no NAT gateway, and teardown after every session. Phase 3 cost under $1 in AWS charges
 - **CD:** _(Phase 4)_
-- **Infrastructure as code:** _(Phase 3)_
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
 ## Project Phases
@@ -35,7 +39,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | --------------------------------------------------------------- | ------- | -------------------------------------------------------------------- |
 | 1. Containerization with Docker and Docker Compose              | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
 | 2. CI with GitHub Actions (lint, build, smoke test, image scan) | ✅ Done | [docs/phase-2-ci.md](docs/phase-2-ci.md)                             |
-| 3. AWS infrastructure with Terraform                            | Planned |                                                                      |
+| 3. AWS infrastructure with Terraform                            | ✅ Done | [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)     |
 | 4. Continuous deployment (dev → staging → prod)                 | Planned |                                                                      |
 | 5. Monitoring and alerting                                      | Planned |                                                                      |
 
@@ -46,7 +50,8 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | App        | Next.js 15, React 19, MongoDB (Mongoose), Auth.js, Stripe |
 | Containers | Docker (multi-stage), Docker Compose                      |
 | CI/CD      | GitHub Actions                                            |
-| Cloud      | AWS, Terraform _(Phase 3)_                                |
+| Cloud      | AWS (ECS Fargate, ALB, ECR, Route 53, ACM, SSM, S3), Terraform |
+| DNS        | Cloudflare (domain), Route 53 (delegated `project1` subdomain) |
 
 ## Branching Strategy
 
@@ -102,3 +107,26 @@ mode, and Google OAuth credentials.
 
 Stop everything with `docker compose down`. Add `-v` to also delete the
 local database.
+
+## Deploy to AWS (dev)
+
+The full walkthrough, design decisions, and costs are in the
+[Phase 3 write-up](docs/phase-3-infrastructure.md). In short:
+
+1. **One-time bootstrap** (budget alarm, state bucket, ECR, Route 53 zone,
+   certificate): copy `infra/bootstrap/terraform.tfvars.example` to
+   `terraform.tfvars`, then run `terraform init` and `terraform apply` in
+   `infra/bootstrap/`.
+2. **Secrets:** store each app secret as an SSM `SecureString` under
+   `/code-fast-saas/dev/` (see the write-up for the list).
+3. **Image:** build the app, tag it with the git short SHA, and push it to
+   the ECR repository from the bootstrap outputs.
+4. **Environment:** copy `infra/envs/dev/terraform.tfvars.example` to
+   `terraform.tfvars`, set `image_tag`, then run `terraform init` and
+   `terraform apply` in `infra/envs/dev/`.
+5. **Tear down** with `terraform destroy` in `infra/envs/dev/` only. The
+   bootstrap stack stays up.
+
+After changing a secret in SSM, run
+`aws ecs update-service --cluster code-fast-saas-dev --service app --force-new-deployment`,
+because ECS only reads secrets when a task starts.

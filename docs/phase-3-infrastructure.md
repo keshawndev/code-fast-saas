@@ -6,15 +6,17 @@ rebuilt with one command.
 
 **Status:** in progress. The bootstrap stack is merged
 ([#21](https://github.com/keshawndev/code-fast-saas/pull/21)). The dev
-stack (network, security groups, IAM, ECS, load balancer) is on
-`feature/phase-3-dev-backend`, and the app answers through the ALB over
-HTTP. HTTPS and end-to-end checks are next.
+stack (network, security groups, IAM, ECS, load balancer, HTTPS) is on
+`feature/phase-3-dev-backend`, and the app is live at
+`https://project1.keshawnbarbary.com` while the dev stack is up.
+End-to-end checks (sign-in, Stripe) are next.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Internet] -->|":80"| ALB[ALB]
+    U[Browser] -->|"DNS: project1.keshawnbarbary.com"| R53[Route 53 alias]
+    R53 --> ALB["ALB<br/>:443 TLS, :80 → 301"]
     ALB -->|":3000"| T["ECS Fargate task<br/>public subnet, app SG"]
     T -->|pull image| ECR[(ECR)]
     T -->|secrets at startup| SSM[(SSM Parameter Store)]
@@ -26,8 +28,8 @@ Terraform is split into two stacks with separate state:
 
 | Stack     | Folder             | State                                             | Lifecycle                                 | Contents                                                                 |
 | --------- | ------------------ | ------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
-| Bootstrap | `infra/bootstrap/` | Local file (gitignored)                           | Long-lived                                | Budget alarm, S3 state bucket, ECR repository                            |
-| Dev       | `infra/envs/dev/`  | `s3://…/dev/terraform.tfstate`, native S3 locking | **Destroyed at the end of every session** | VPC, subnets, security groups, IAM roles, ECS cluster/service, log group, ALB |
+| Bootstrap | `infra/bootstrap/` | Local file (gitignored)                           | Long-lived                                | Budget alarm, S3 state bucket, ECR repository, Route 53 zone, ACM certificate                            |
+| Dev       | `infra/envs/dev/`  | `s3://…/dev/terraform.tfstate`, native S3 locking | **Destroyed at the end of every session** | VPC, subnets, security groups, IAM roles, ECS cluster/service, log group, ALB, HTTPS listener, DNS alias record |
 
 ## Results (so far)
 
@@ -41,7 +43,9 @@ Terraform is split into two stacks with separate state:
 | Secrets for the deployed app  | `.env.local` on my laptop                  | 7 SSM `SecureString` parameters, injected at container start, never in git, the image, or Terraform state |
 | Dev environment               | n/a                                        | One `terraform apply` creates it and one `terraform destroy` removes it                                   |
 | App on AWS                    | n/a                                        | Fargate task running, Next.js `Ready in 810ms` in CloudWatch Logs                                         |
-| Public endpoint               | n/a                                        | ALB DNS name, `/api/health` returns `200 OK` through the load balancer                                   |
+| Public endpoint               | n/a                                        | `https://project1.keshawnbarbary.com` (TLS 1.2/1.3, HTTP/2). `http://` returns a 301 redirect            |
+| DNS changes per session       | n/a                                        | None. The ALB's name changes on every apply, and the alias record follows it automatically               |
+| Certificate validation        | n/a                                        | ACM DNS validation through Route 53 in about 1 second, auto-renewing                                    |
 
 ## What I Built
 
@@ -56,7 +60,10 @@ Terraform is split into two stacks with separate state:
 | [`infra/envs/dev/security_groups.tf`](../infra/envs/dev/security_groups.tf) | ALB SG (HTTP from the internet) and app SG (only from the ALB SG)                  |
 | [`infra/envs/dev/iam.tf`](../infra/envs/dev/iam.tf)                         | ECS execution role (ECR, logs, SSM secrets) and an empty task role                 |
 | [`infra/envs/dev/ecs.tf`](../infra/envs/dev/ecs.tf)                         | Cluster, log group (7-day retention), Fargate task definition, service             |
-| [`infra/envs/dev/alb.tf`](../infra/envs/dev/alb.tf)                         | ALB, target group (`ip` targets, health check on `/api/health`), HTTP listener     |
+| [`infra/bootstrap/dns.tf`](../infra/bootstrap/dns.tf)                       | Route 53 hosted zone for `project1.keshawnbarbary.com` (`prevent_destroy`)         |
+| [`infra/bootstrap/certificate.tf`](../infra/bootstrap/certificate.tf)       | ACM certificate, validation record (`for_each`), validation waiter                 |
+| [`infra/envs/dev/https.tf`](../infra/envs/dev/https.tf)                     | Looks up the zone and certificate, HTTPS listener, port 443 rule, alias A record   |
+| [`infra/envs/dev/alb.tf`](../infra/envs/dev/alb.tf)                         | ALB, target group (`ip` targets, `/api/health`), HTTP listener that redirects to HTTPS |
 | [`infra/envs/dev/outputs.tf`](../infra/envs/dev/outputs.tf)                 | `app_url` output, used by scripts and `curl`                                       |
 | `terraform.tfvars.example` (both stacks)                                    | Documents required inputs. Real `terraform.tfvars` files are gitignored            |
 
@@ -105,6 +112,20 @@ Terraform is split into two stacks with separate state:
 - **Explicit security settings even where AWS has defaults.** S3 now
   encrypts and blocks public access by default, but writing it out makes
   the intent reviewable and passes policy scanners.
+- **A subdomain delegated to Route 53.** The domain is registered at GoDaddy
+  and its DNS is hosted on Cloudflare. Four NS records in Cloudflare hand
+  `project1.keshawnbarbary.com` to a Route 53 zone, so Terraform manages
+  every record under it and the rest of the domain is untouched. The zone
+  costs $0.50/month. The alternative was editing a record by hand every
+  session (the ALB's name changes on each apply), which would also block
+  automated deployments in Phase 4.
+- **Zone and certificate in bootstrap.** Recreating the zone would assign
+  new nameservers and break the delegation, and re-validating a certificate
+  on every apply wastes time. Both are long-lived. Dev finds them by name
+  with data sources.
+- **HTTPS only.** Port 80 returns a 301 redirect to HTTPS, so session
+  cookies never travel unencrypted. The listener uses the
+  `ELBSecurityPolicy-TLS13-1-2-2021-06` policy (TLS 1.2 and 1.3 only).
 - **Tags on everything.** `default_tags` adds `Project`, `ManagedBy`, and
   `Stack` to every resource, for cost filtering and cleanup.
 
@@ -173,6 +194,18 @@ Terraform is split into two stacks with separate state:
 - **Fix:** changed the `app_from_alb` ingress rule to 3000. My first idea was to change the target group to 80, but the container logs (`Network: ...:3000`) showed nothing listens on 80, so that would have traded one failure for another.
 - **After the fix:** the response changed to `503`. ECS had already killed the unhealthy task, and the old target was **draining** for the default 300-second deregistration delay, so for a few minutes there was no healthy target at all. Once the replacement task passed two health checks, `/api/health` returned `200 OK`.
 
+### 11. My domain's DNS wasn't where I thought it was
+
+- **Problem:** I planned to add the delegation records in GoDaddy, where I bought the domain.
+- **Cause:** a public NS lookup showed the domain uses Cloudflare's nameservers. GoDaddy is the registrar, but Cloudflare hosts the DNS records, so records added at GoDaddy would have been ignored.
+- **Fix:** added the four NS records for `project1` in Cloudflare, then confirmed the delegation from outside with Google's DNS-over-HTTPS API. The answer came from a Route 53 address (`205.251.x.x`). My AI mentor ran the first lookup that found Cloudflare.
+
+### 12. `CNAME ... is not permitted at apex`
+
+- **Problem:** creating `project1.keshawnbarbary.com` as a CNAME to the ALB failed with `InvalidChangeBatch: RRSet of type CNAME ... is not permitted at apex`. (A planned drill.) The rest of the apply succeeded, so the HTTPS listener existed but nothing pointed to it.
+- **Cause:** the record's name was the zone's own name, its **apex**. Every zone has SOA and NS records at the apex, and DNS doesn't allow a CNAME to share a name with other records. A plain A record wouldn't work either, because an ALB has no fixed IPs.
+- **Fix:** a Route 53 **alias** A record pointing at the ALB (`aws_lb.main.dns_name` and the ALB's own `zone_id`). Route 53 answers with the ALB's current IPs. Re-running `apply` created only the missing record, and `curl` showed the 301 redirect and `HTTP/2 200` over HTTPS.
+
 ## What I Learned
 
 - **Read the plan's summary line first**, and predict it before running
@@ -223,11 +256,19 @@ found` for something that is obviously an argument is the giveaway.
   with an empty value (`curl: No host part in the URL`). Run the inner
   command alone first.
 
+- Registrar and DNS host can be different companies. Check where a
+  domain's NS records point before changing anything.
+- A CNAME can't be used at a zone's apex. Route 53 alias records solve this
+  for AWS resources and follow their changing IPs.
+- Terraform doesn't roll back a failed apply. Whatever succeeded stays,
+  and the next apply only does what's left, so read to the end of the
+  output.
+- A provider warning can come from values left in state, not from my code.
+  Check the file before changing it to quiet a warning.
+
 ## Still To Do
 
-- HTTPS with an ACM certificate and a subdomain (Google OAuth requires
-  `https://` redirect URIs)
-- `APP_URL` / `AUTH_URL` switched to the HTTPS URL
+- Google OAuth redirect URI for `https://project1.keshawnbarbary.com`
 - End-to-end check: sign in, create a board, Stripe test checkout and
   webhook
 - Final teardown check, README update, and promotion PRs

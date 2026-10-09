@@ -3,6 +3,7 @@ data "aws_ecr_repository" "app" {
 }
 
 locals {
+
   secret_names = [
     "MONGO_URI",
     "AUTH_SECRET",
@@ -54,8 +55,8 @@ resource "aws_ecs_task_definition" "app" {
       environment = [
         { name = "AUTH_TRUST_HOST", value = "true" },
         { name = "STRIPE_PRICE_ID", value = var.stripe_price_id },
-        { name = "APP_URL", value = "http://${aws_lb.main.dns_name}" },
-        { name = "AUTH_URL", value = "http://${aws_lb.main.dns_name}" },
+        { name = "APP_URL", value = "https://${local.app_domain}" },
+        { name = "AUTH_URL", value = "https://${local.app_domain}" },
       ]
 
       secrets = [
@@ -98,5 +99,5 @@ resource "aws_ecs_service" "app" {
 
   health_check_grace_period_seconds = 60
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener.https]
 }

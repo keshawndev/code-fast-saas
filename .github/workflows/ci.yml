@@ -77,7 +77,7 @@ jobs:
 
       - name: Validate configuration
         run: |
-          for dir in infra/bootstrap infra/envs/dev; do
+          for dir in infra/bootstrap infra/envs/*; do
             echo "::group::$dir"
             terraform -chdir=$dir init -input=false -backend=false
             terraform -chdir=$dir validate

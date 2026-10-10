@@ -1,6 +1,7 @@
 resource "aws_acm_certificate" "project1" {
-  domain_name       = "project1.keshawnbarbary.com"
-  validation_method = "DNS"
+  domain_name               = "project1.keshawnbarbary.com"
+  subject_alternative_names = ["dev.project1.keshawnbarbary.com", "staging.project1.keshawnbarbary.com"]
+  validation_method         = "DNS"
 
   lifecycle {
     create_before_destroy = true

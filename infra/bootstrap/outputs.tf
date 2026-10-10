@@ -17,3 +17,8 @@ output "certificate_arn" {
   description = "Validated ACM certificate for project1.keshawnbarbary.com"
   value       = aws_acm_certificate_validation.project1.certificate_arn
 }
+
+output "deploy_role_arns" {
+  description = "IAM role each environment's pipeline assumes through GitHub OIDC"
+  value       = { for env, role in aws_iam_role.deploy : env => role.arn }
+}

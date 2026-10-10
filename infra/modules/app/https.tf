@@ -1,13 +1,9 @@
-locals {
-  app_domain = "project1.keshawnbarbary.com"
-}
-
 data "aws_route53_zone" "project1" {
-  name = local.app_domain
+  name = var.zone_name
 }
 
 data "aws_acm_certificate" "project1" {
-  domain      = local.app_domain
+  domain      = var.zone_name
   statuses    = ["ISSUED"]
   most_recent = true
 }
@@ -35,7 +31,7 @@ resource "aws_lb_listener" "https" {
 
 resource "aws_route53_record" "app" {
   zone_id = data.aws_route53_zone.project1.zone_id
-  name    = local.app_domain
+  name    = var.domain
   type    = "A"
 
   alias {

@@ -17,16 +17,16 @@ locals {
 
 
 resource "aws_cloudwatch_log_group" "app" {
-  name              = "/ecs/code-fast-saas-dev"
+  name              = "/ecs/${local.name}"
   retention_in_days = 7
 }
 
 resource "aws_ecs_cluster" "main" {
-  name = "code-fast-saas-dev"
+  name = local.name
 }
 
 resource "aws_ecs_task_definition" "app" {
-  family                   = "code-fast-saas-dev"
+  family                   = local.name
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
@@ -55,14 +55,14 @@ resource "aws_ecs_task_definition" "app" {
       environment = [
         { name = "AUTH_TRUST_HOST", value = "true" },
         { name = "STRIPE_PRICE_ID", value = var.stripe_price_id },
-        { name = "APP_URL", value = "https://${local.app_domain}" },
-        { name = "AUTH_URL", value = "https://${local.app_domain}" },
+        { name = "APP_URL", value = "https://${var.domain}" },
+        { name = "AUTH_URL", value = "https://${var.domain}" },
       ]
 
       secrets = [
         for n in local.secret_names : {
           name      = n
-          valueFrom = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/dev/${n}"
+          valueFrom = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/${n}"
         }
       ]
 

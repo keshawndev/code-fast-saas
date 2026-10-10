@@ -1,5 +1,5 @@
 resource "aws_security_group" "alb" {
-  name        = "code-fast-saas-dev-alb"
+  name        = "${local.name}-alb"
   description = "Public HTTP to the load balancer"
   vpc_id      = aws_vpc.main.id
 }
@@ -19,7 +19,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_all" {
 }
 
 resource "aws_security_group" "app" {
-  name        = "code-fast-saas-dev-app"
+  name        = "${local.name}-app"
   description = "App tasks, reachable only from the ALB"
   vpc_id      = aws_vpc.main.id
 }

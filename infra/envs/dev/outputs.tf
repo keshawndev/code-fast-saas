@@ -1,4 +1,4 @@
 output "app_url" {
   description = "Public URL of the dev environment"
-  value       = "https://${local.app_domain}"
+  value       = module.app.app_url
 }

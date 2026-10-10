@@ -50,6 +50,22 @@ which would normally mean destroying and recreating everything or writing
 same 27 resources under `module.app.`, with dev now at
 `dev.project1.keshawnbarbary.com`.
 
+### Step 3: Certificate and stacks for every environment
+
+- Added `dev.` and `staging.` to the ACM certificate as Subject Alternative
+  Names. SANs can't be edited, so Terraform replaced the certificate. The
+  plan showed `+/-` (create, then destroy) because of
+  `create_before_destroy`, and the new certificate was issued before the old
+  one was deleted. I chose explicit SANs over a wildcard, because ACM gives a
+  wildcard and the bare name the same validation record, which collides in
+  the `for_each` over validation records.
+- Created `infra/envs/staging` and `infra/envs/prod` from dev's files: backend
+  (`staging/terraform.tfstate`, `prod/terraform.tfstate`), provider tags, and
+  one module call each. Prod uses the bare `project1.keshawnbarbary.com`.
+  Each plans 27 resources with its own names, SSM path, and DNS record.
+- CI now validates `infra/bootstrap` and every folder matching
+  `infra/envs/*`, so a new environment is checked automatically.
+
 ## Problems I Solved
 
 ### 1. `validate` in CI failed with "No valid credential sources found"
@@ -69,6 +85,12 @@ same 27 resources under `module.app.`, with dev now at
 - **Problem:** the GitHub API needs the whole ruleset in an update, and a one-line pipeline to edit it wrapped when pasted. The `--jq` flag lost its argument, and the request failed before sending anything.
 - **Fix:** broke it into steps with a file in the middle: fetch the ruleset, add the check with a small script, inspect the file (`grep` for the check names), then `PUT` it. Reviewing the file before sending it is the same habit as reading a Terraform plan before applying.
 
+### 4. A certificate change replaced a record I expected to stay
+
+- **Problem:** I expected the existing `project1` validation record to stay untouched, since the records are keyed by domain name. The plan showed it as `-/+`.
+- **Cause:** the record's name comes from the new certificate's validation options, which are `(known after apply)` at plan time. Terraform can't know the new value will match, so it plans a replacement. ACM usually reuses the same validation record for the same domain, so the result was harmless.
+- **Fix:** none needed. Applied while no listener used the certificate. Keying by domain still kept the record's identity, so nothing got renumbered.
+
 ## What I Learned (so far)
 
 - "Works locally, fails in CI" usually means an environment difference:
@@ -81,5 +103,10 @@ same 27 resources under `module.app.`, with dev now at
   it per environment. `terraform init` is needed again after adding one.
 - When pasted code looks shifted, run `terraform fmt` right away. If `fmt`
   fails instead of fixing it, the block structure is broken.
+- `forces replacement` next to `(known after apply)` often means "might
+  change," not "will change." Think through what the real new value will be.
+- Run `terraform fmt -recursive infra` before every commit. A longer
+  argument name realigns every `=` in its block, and the CI check fails
+  otherwise.
 - Read CI logs from the bottom up: find the first `Error:` and the
   `##[group]Run` line before it, and ignore the setup noise.

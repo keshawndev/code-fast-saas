@@ -106,6 +106,62 @@ instead of running two applies at once.
 **First automated deploy:** merging the fix PR deployed dev end to end in
 4m19s, and `https://dev.project1.keshawnbarbary.com/api/health` returned 200.
 
+### Step 7: Teardown as a workflow
+
+A `Destroy` workflow runs `terraform destroy` from a **Run workflow** button
+(with a dropdown: `dev`, `staging`, `prod`, or `all`) and on a nightly
+schedule at 07:00 UTC that tears down all three environments, so a forgotten
+environment costs at most one day.
+
+Two constraints shaped it:
+
+- Scheduled runs use the **default branch**, and each deploy environment only
+  allows its own branch. The prod environment also waits for approval, which
+  would block a 3 AM teardown forever. So the destroy jobs use a separate
+  GitHub Environment, `teardown`, with no reviewers, and assume a separate
+  `code-fast-saas-teardown` role. That role reuses each environment's deploy
+  permissions and nothing more, and its trust only accepts the `teardown`
+  environment.
+- The **Run workflow** button and schedules only work for workflow files on
+  the default branch, which was `prod`. Promoting to `prod` would also trigger
+  staging and prod deploys before their secrets existed, so I changed the
+  default branch to `dev`. That's also where every PR goes. `prod` is still
+  protected and is still what production runs.
+
+The destroy jobs share the deploy job's concurrency group (`deploy-<env>`), so
+a teardown waits for an in-progress deploy instead of deleting infrastructure
+out from under it. I also pinned every job to `ubuntu-24.04` ahead of
+GitHub moving `ubuntu-latest` to Ubuntu 26.
+
+**Results:** a second merge re-deployed dev as an in-place rolling update in
+3m10s with no downtime, and pressing the Destroy button removed all 27
+resources in 4m11s. Afterward, no load balancers, clusters, or VPCs remained.
+
+### Step 8: Integrations for each environment
+
+Terraform builds the infrastructure, but each environment also needs its own
+connections to outside services:
+
+| Integration | dev | staging | prod |
+| --- | --- | --- | --- |
+| MongoDB Atlas user and database (readWrite on its own DB only) | `codefast-dev` | `codefast-staging` | `codefast-prod` |
+| `AUTH_SECRET` | own | own (generated) | own (generated) |
+| Stripe webhook endpoint and signing secret | `dev.project1...` | `staging.project1...` | `project1...` |
+| Google OAuth redirect URI | `dev.project1...` | `staging.project1...` | `project1...` |
+| Google client, Resend key, Stripe test key | shared | copied from dev | copied from dev |
+
+`scripts/setup-env-secrets.sh <env>` seeds an environment in one run: it
+copies the shared secrets from dev's SSM path, generates a new `AUTH_SECRET`,
+prompts for the Mongo URI with hidden input, and creates the Stripe webhook
+(skipping it if the URL already has one), storing its signing secret
+directly in SSM. No secret value is printed or written to disk. In a real
+company, prod would have its own OAuth client and live Stripe keys rather
+than copies of the test ones.
+
+Dev's Stripe webhook moved from the bare domain to `dev.project1...` with an
+in-place URL update, which keeps its signing secret, so dev's SSM value
+stayed valid.
+
 ## Problems I Solved
 
 ### 1. `validate` in CI failed with "No valid credential sources found"

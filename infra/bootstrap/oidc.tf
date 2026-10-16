@@ -27,7 +27,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.github_repo}:ref:refs/heads/${each.key}"]
+      values   = ["repo:${local.github_repo}:environment:${each.key}"]
     }
   }
 }
@@ -71,6 +71,7 @@ data "aws_iam_policy_document" "deploy" {
       "ecr:BatchGetImage",
       "ecr:DescribeRepositories",
       "ecr:DescribeImages",
+      "ecr:ListTagsForResource"
     ]
     resources = [aws_ecr_repository.app.arn]
   }
@@ -91,6 +92,7 @@ data "aws_iam_policy_document" "deploy" {
       "route53:ListResourceRecordSets",
       "route53:ListTagsForResource",
       "route53:GetChange",
+      "acm:GetCertificate"
     ]
     resources = ["*"]
   }

@@ -12,7 +12,7 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 }
 
 resource "aws_iam_role" "execution" {
-  name               = "code-fast-saas-dev-execution"
+  name               = "${local.name}-execution"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
 }
 
@@ -22,7 +22,7 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 resource "aws_iam_role" "task" {
-  name               = "code-fast-saas-dev-task"
+  name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
 }
 
@@ -30,13 +30,13 @@ data "aws_iam_policy_document" "read_secrets" {
   statement {
     actions = ["ssm:GetParameters"]
     resources = [
-      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/dev/*"
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/*"
     ]
   }
 }
 
 resource "aws_iam_role_policy" "execution_read_secrets" {
-  name   = "read-dev-secrets"
+  name   = "read-${var.environment}-secrets"
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.read_secrets.json
 }

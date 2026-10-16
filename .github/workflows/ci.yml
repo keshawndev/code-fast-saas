@@ -85,64 +85,74 @@ jobs:
           done
 
   deploy:
-        name: Deploy
-        if: github.event_name == 'push'
-        needs: [build, terraform]
-        runs-on: ubuntu-latest
-        environment: ${{ github.ref_name }}
-        concurrency:
-          group: deploy-${{ github.ref_name }}
-          cancel-in-progress: false
-        permissions:
-          id-token: write
-          contents: read
-        steps:
-          - name: Check out code
-            uses: actions/checkout@v7
+    name: Deploy
+    if: github.event_name == 'push'
+    needs: [build, terraform]
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
 
-          - name: Configure AWS credentials
-            uses: aws-actions/configure-aws-credentials@v6
-            with:
-              role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-              aws-region: us-east-1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
-          - name: Log in to ECR
-            id: ecr
-            uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-          - name: Set image tag
-            run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Set image tag
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
-          - name: Set up Docker Buildx
-            uses: docker/setup-buildx-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-          - name: Build and push image
-            uses: docker/build-push-action@v7
-            with:
-              context: .
-              push: true
-              tags: ${{ steps.ecr.outputs.registry }}/code-fast-saas:${{ env.TAG }}
-              cache-from: type=gha
-              cache-to: type=gha,mode=max
+      - name: Check if image already exists
+        id: image
+        run: |
+          if aws ecr describe-images --repository-name code-fast-saas --image-ids imageTag=$TAG > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
-          - name: Set up Terraform
-            uses: hashicorp/setup-terraform@v4
-            with:
-              terraform_version: 1.16.4
-              terraform_wrapper: false
+      - name: Build and push image
+        if: steps.image.outputs.exists != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/code-fast-saas:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-          - name: Terraform apply
-            working-directory: infra/envs/${{ github.ref_name }}
-            env:
-              TF_VAR_image_tag: ${{ env.TAG }}
-              TF_VAR_stripe_price_id: ${{ vars.STRIPE_PRICE_ID }}
-            run: |
-              terraform init -input=false
-              terraform apply -input=false -auto-approve
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
 
-          - name: Wait for service and check health
-            working-directory: infra/envs/${{ github.ref_name }}
-            run: |
-              aws ecs wait services-stable --cluster code-fast-saas-${{ github.ref_name }} --services app
-              URL=$(terraform output -raw app_url)
-              curl --fail --retry 10 --retry-all-errors --retry-delay 5 "$URL/api/health"
+      - name: Terraform apply
+        working-directory: infra/envs/${{ github.ref_name }}
+        env:
+          TF_VAR_image_tag: ${{ env.TAG }}
+          TF_VAR_stripe_price_id: ${{ vars.STRIPE_PRICE_ID }}
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
+
+      - name: Wait for service and check health
+        working-directory: infra/envs/${{ github.ref_name }}
+        run: |
+          aws ecs wait services-stable --cluster code-fast-saas-${{ github.ref_name }} --services app
+          URL=$(terraform output -raw app_url)
+          curl --fail --retry 10 --retry-all-errors --retry-delay 5 "$URL/api/health"

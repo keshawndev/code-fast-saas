@@ -66,6 +66,46 @@ same 27 resources under `module.app.`, with dev now at
 - CI now validates `infra/bootstrap` and every folder matching
   `infra/envs/*`, so a new environment is checked automatically.
 
+### Step 4: Keyless AWS access with GitHub OIDC
+
+The bootstrap stack now has a GitHub OIDC provider and one deploy role per
+environment (`code-fast-saas-<env>-deploy`). No AWS keys are stored in
+GitHub: each job gets a short-lived token from GitHub, and AWS exchanges it
+for one-hour credentials only if the token's claims match the role's trust
+policy.
+
+- **Trust:** audience `sts.amazonaws.com`, and subject
+  `repo:keshawndev/code-fast-saas:environment:<env>`, so only this repo's
+  jobs running in that GitHub Environment can assume the role.
+- **Permissions, scoped per environment:** state objects under its own
+  prefix only (`dev/*`), push to the one ECR repo, record changes in the
+  `project1` zone only, and IAM actions on its own two ECS roles only (so the
+  pipeline can't create or change any other role). EC2, ELB, ECS, and Logs
+  are service-scoped (`ec2:*` and so on). That's a deliberate tradeoff,
+  noted in the follow-ups.
+
+### Step 5: GitHub Environments
+
+Created `dev`, `staging`, and `prod` in the repo settings. Each can only be
+deployed from its own branch, and each holds its own `AWS_ROLE_ARN`
+variable. `prod` requires my approval before a job runs. The Stripe price ID
+is a repository variable. ARNs and price IDs are configuration, not secrets,
+so they're variables and stay visible in logs for debugging.
+
+### Step 6: The deploy job
+
+A `Deploy` job in `ci.yml` runs on pushes to `dev`, `staging`, or `prod` (so
+only after a PR merges), after `Docker build` and `Terraform` pass. It uses
+the branch name as the environment, assumes that environment's role through
+OIDC, pushes the image tagged with the short commit SHA (skipping the push if
+that tag already exists), runs `terraform apply` with `TF_VAR_image_tag` and
+`TF_VAR_stripe_price_id`, waits for the ECS service to stabilize, and
+health-checks the app. A `concurrency` group per branch queues deploys
+instead of running two applies at once.
+
+**First automated deploy:** merging the fix PR deployed dev end to end in
+4m19s, and `https://dev.project1.keshawnbarbary.com/api/health` returned 200.
+
 ## Problems I Solved
 
 ### 1. `validate` in CI failed with "No valid credential sources found"
@@ -91,6 +131,24 @@ same 27 resources under `module.app.`, with dev now at
 - **Cause:** the record's name comes from the new certificate's validation options, which are `(known after apply)` at plan time. Terraform can't know the new value will match, so it plans a replacement. ACM usually reuses the same validation record for the same domain, so the result was harmless.
 - **Fix:** none needed. Applied while no listener used the certificate. Keying by domain still kept the record's identity, so nothing got renumbered.
 
+### 5. `Not authorized to perform sts:AssumeRoleWithWebIdentity`
+
+- **Problem:** the first deploy failed at `Configure AWS credentials`. (A planned drill.)
+- **Cause:** the trust policy expected the branch form of the token's subject claim, `repo:keshawndev/code-fast-saas:ref:refs/heads/dev`. A job that declares `environment:` gets the environment form instead, `repo:keshawndev/code-fast-saas:environment:dev`. AWS compared the two and refused the login. I first looked at the permissions policy, but this action is controlled by the trust policy, which is checked before any permissions apply.
+- **Fix:** trust `repo:keshawndev/code-fast-saas:environment:<env>`. This is also the stronger setting: AWS credentials now require passing that environment's protection rules, including the prod approval.
+
+### 6. AccessDenied for actions I didn't know Terraform used
+
+- **Problem:** with login fixed, `terraform apply` failed on `ecr:ListTagsForResource` and `acm:GetCertificate`.
+- **Cause:** the AWS provider makes calls the `.tf` code doesn't show. Reading the ECR repository also reads its tags, and reading the certificate fetches the certificate itself. Neither action was in the deploy policy.
+- **Fix:** added both actions. Each AccessDenied message named the role, the exact action, the resource ARN, and the Terraform block, which made the fix precise. For Terraform pipelines, least privilege usually means start scoped, run, and add what the errors name. IAM Access Analyzer can generate the list from CloudTrail at larger scale.
+
+### 7. Re-running the deploy failed on an immutable tag
+
+- **Problem:** re-running the job for the same commit failed at `Build and push image`: `The image tag '765da8a' already exists ... cannot be overwritten because the tag is immutable.`
+- **Cause:** the previous attempt had already pushed that commit's image, and the ECR repo uses immutable tags. The pipeline wasn't idempotent: running it twice for the same commit failed.
+- **Fix:** a step checks for the tag with `aws ecr describe-images` and skips the build and push if it exists, so a re-run deploys the existing image. A re-run uses the workflow file from the original commit, so the fix shipped through a normal PR, and its merge deployed cleanly.
+
 ## What I Learned (so far)
 
 - "Works locally, fails in CI" usually means an environment difference:
@@ -108,5 +166,13 @@ same 27 resources under `module.app.`, with dev now at
 - Run `terraform fmt -recursive infra` before every commit. A longer
   argument name realigns every `=` in its block, and the CI check fails
   otherwise.
+- Trust policy = who can assume a role. Permissions policy = what it can do.
+  `AssumeRoleWithWebIdentity` errors are always about trust.
+- GitHub's OIDC subject claim changes shape depending on the job
+  (`ref:refs/heads/...`, `pull_request`, `environment:...`). The trust policy
+  has to match the shape the job actually sends.
+- Pipelines get re-run, so every step should be safe to run twice.
+- Pin runner images. GitHub announced that `ubuntu-latest` moves to Ubuntu
+  26, so "latest" changes on its own, just like unpinned Node or Terraform.
 - Read CI logs from the bottom up: find the first `Error:` and the
   `##[group]Run` line before it, and ignore the setup noise.

@@ -22,3 +22,8 @@ output "deploy_role_arns" {
   description = "IAM role each environment's pipeline assumes through GitHub OIDC"
   value       = { for env, role in aws_iam_role.deploy : env => role.arn }
 }
+
+output "teardown_role_arn" {
+  description = "IAM role the destroy workflow assumes through GitHub OIDC"
+  value       = aws_iam_role.teardown.arn
+}

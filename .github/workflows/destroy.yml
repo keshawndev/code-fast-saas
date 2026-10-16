@@ -1,0 +1,54 @@
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to destroy
+        type: choice
+        options: [dev, staging, prod, all]
+        default: dev
+  schedule:
+    # 07:00 UTC is 3 AM Eastern (2 AM in winter). Tears down anything left running.
+    - cron: "0 7 * * *"
+
+jobs:
+  destroy:
+    name: Destroy ${{ matrix.environment }}
+    runs-on: ubuntu-24.04
+    environment: teardown
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJSON((github.event_name == 'schedule' || inputs.environment == 'all') && '["dev","staging","prod"]' || format('["{0}"]', inputs.environment)) }}
+    concurrency:
+      group: deploy-${{ matrix.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - name: Terraform destroy
+        working-directory: infra/envs/${{ matrix.environment }}
+        env:
+          # Required variables; their values don't matter for a destroy.
+          TF_VAR_image_tag: unused
+          TF_VAR_stripe_price_id: unused
+        run: |
+          terraform init -input=false
+          terraform destroy -input=false -auto-approve

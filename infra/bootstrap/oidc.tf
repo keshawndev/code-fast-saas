@@ -9,7 +9,9 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 data "aws_iam_policy_document" "github_trust" {
-  for_each = local.environments
+  # One trust policy per GitHub Environment: the three deploy targets, plus
+  # "teardown" for the destroy workflow.
+  for_each = setunion(local.environments, ["teardown"])
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -134,5 +136,21 @@ resource "aws_iam_role_policy" "deploy" {
 
   name   = "deploy-${each.key}"
   role   = aws_iam_role.deploy[each.key].id
+  policy = data.aws_iam_policy_document.deploy[each.key].json
+}
+
+# The destroy workflow runs from one GitHub Environment ("teardown") so the
+# nightly schedule can tear down every environment without waiting for prod
+# approval. It gets each environment's deploy permissions, nothing more.
+resource "aws_iam_role" "teardown" {
+  name               = "code-fast-saas-teardown"
+  assume_role_policy = data.aws_iam_policy_document.github_trust["teardown"].json
+}
+
+resource "aws_iam_role_policy" "teardown" {
+  for_each = local.environments
+
+  name   = "teardown-${each.key}"
+  role   = aws_iam_role.teardown.id
   policy = data.aws_iam_policy_document.deploy[each.key].json
 }

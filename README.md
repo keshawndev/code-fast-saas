@@ -27,7 +27,7 @@ containerization, pipelines, and infrastructure are my own work.
 - **Secrets management:** app secrets in SSM Parameter Store, injected at container start, never in git, the image, or Terraform state
 - **Least privilege:** IAM Identity Center (SSO) instead of access keys, separate ECS execution and task roles, security groups that only let the load balancer reach the app
 - **Cost control:** a $10 budget alarm created before anything else, no NAT gateway, and teardown after every session. Phase 3 cost under $1 in AWS charges
-- **CD:** _(Phase 4)_
+- **CD:** merging a PR deploys that branch's environment (build → push to ECR → `terraform apply` → health check) through GitHub OIDC with no stored AWS keys. Prod waits for a required reviewer, and a nightly workflow tears every environment down
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
 ## Project Phases
@@ -40,7 +40,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | 1. Containerization with Docker and Docker Compose              | ✅ Done | [docs/phase-1-containerization.md](docs/phase-1-containerization.md) |
 | 2. CI with GitHub Actions (lint, build, smoke test, image scan) | ✅ Done | [docs/phase-2-ci.md](docs/phase-2-ci.md)                             |
 | 3. AWS infrastructure with Terraform                            | ✅ Done | [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)     |
-| 4. Continuous deployment (dev → staging → prod)                 | Planned |                                                                      |
+| 4. Continuous deployment (dev → staging → prod)                 | ✅ Done | [docs/phase-4-cd.md](docs/phase-4-cd.md)                             |
 | 5. Monitoring and alerting                                      | Planned |                                                                      |
 
 ## Tech Stack
@@ -49,7 +49,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | ---------- | --------------------------------------------------------- |
 | App        | Next.js 15, React 19, MongoDB (Mongoose), Auth.js, Stripe |
 | Containers | Docker (multi-stage), Docker Compose                      |
-| CI/CD      | GitHub Actions                                            |
+| CI/CD      | GitHub Actions, GitHub Environments, OIDC to AWS          |
 | Cloud      | AWS (ECS Fargate, ALB, ECR, Route 53, ACM, SSM, S3), Terraform |
 | DNS        | Cloudflare (domain), Route 53 (delegated `project1` subdomain) |
 
@@ -65,7 +65,10 @@ flowchart LR
 - New work happens on a short-lived `feature/*` or `fix/*` branch.
 - Changes merge into `dev` through a pull request.
 - Changes are promoted `dev` → `staging` → `prod`, each through its own PR.
-- Each branch maps to its own environment.
+- Each branch maps to its own environment, and **merging into it deploys
+  it**: `dev` → `dev.project1.keshawnbarbary.com`, `staging` →
+  `staging.project1.keshawnbarbary.com`, `prod` →
+  `project1.keshawnbarbary.com` (after approval).
 
 **Why I chose this:** environment branches make it easy to see what is
 running where. The `prod` branch _is_ production. The tradeoff is that each
@@ -108,25 +111,35 @@ mode, and Google OAuth credentials.
 Stop everything with `docker compose down`. Add `-v` to also delete the
 local database.
 
-## Deploy to AWS (dev)
+## Deploy to AWS
 
-The full walkthrough, design decisions, and costs are in the
-[Phase 3 write-up](docs/phase-3-infrastructure.md). In short:
+Deploys run from GitHub Actions. The full design, results, and problems are
+in the [Phase 3](docs/phase-3-infrastructure.md) and
+[Phase 4](docs/phase-4-cd.md) write-ups.
 
-1. **One-time bootstrap** (budget alarm, state bucket, ECR, Route 53 zone,
-   certificate): copy `infra/bootstrap/terraform.tfvars.example` to
-   `terraform.tfvars`, then run `terraform init` and `terraform apply` in
-   `infra/bootstrap/`.
-2. **Secrets:** store each app secret as an SSM `SecureString` under
-   `/code-fast-saas/dev/` (see the write-up for the list).
-3. **Image:** build the app, tag it with the git short SHA, and push it to
-   the ECR repository from the bootstrap outputs.
-4. **Environment:** copy `infra/envs/dev/terraform.tfvars.example` to
-   `terraform.tfvars`, set `image_tag`, then run `terraform init` and
-   `terraform apply` in `infra/envs/dev/`.
-5. **Tear down** with `terraform destroy` in `infra/envs/dev/` only. The
-   bootstrap stack stays up.
+**Everyday use:**
 
-After changing a secret in SSM, run
-`aws ecs update-service --cluster code-fast-saas-dev --service app --force-new-deployment`,
-because ECS only reads secrets when a task starts.
+- **Deploy:** merge a PR into `dev`, `staging`, or `prod`. The `Deploy` job
+  in `ci.yml` builds and pushes the image, runs `terraform apply` for that
+  environment, and checks `/api/health`. Prod waits for approval under
+  **Actions → the run → Review deployments**.
+- **Tear down:** **Actions → Destroy → Run workflow**, then pick an
+  environment or `all`. A scheduled run also destroys every environment at
+  07:00 UTC.
+- **Change a secret:** update it in SSM under `/code-fast-saas/<env>/`, then
+  redeploy (merge, or re-run the latest deploy). ECS only reads secrets when
+  a task starts.
+
+**One-time setup** for a new AWS account:
+
+1. **Bootstrap** (budget alarm, state bucket, ECR, Route 53 zone,
+   certificate, GitHub OIDC provider and roles): copy
+   `infra/bootstrap/terraform.tfvars.example` to `terraform.tfvars`, then
+   run `terraform init` and `terraform apply` in `infra/bootstrap/`.
+2. **GitHub Environments:** `dev`, `staging`, `prod` (each limited to its
+   own branch, with prod requiring a reviewer) and `teardown`, each with an
+   `AWS_ROLE_ARN` variable from the bootstrap outputs, plus a
+   `STRIPE_PRICE_ID` repository variable.
+3. **Secrets per environment:** `scripts/setup-env-secrets.sh <env>` seeds
+   SSM and creates the Stripe webhook (dev's secrets are set up first, by
+   hand). Add each hostname's redirect URI to the Google OAuth client.

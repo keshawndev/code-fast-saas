@@ -7,7 +7,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = {
-    Name = "code-fast-saas-dev"
+    Name = "${local.name}"
   }
 }
 
@@ -19,7 +19,7 @@ resource "aws_subnet" "public" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
   tags = {
-    Name = "code-fast-saas-dev-public-${count.index}"
+    Name = "${local.name}-public-${count.index}"
   }
 }
 

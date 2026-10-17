@@ -4,9 +4,43 @@
 builds the image, pushes it to ECR, and applies that environment's Terraform,
 with no AWS keys stored in GitHub. Prod waits for a manual approval.
 
-**Status:** in progress.
+**Pull requests:** #28–#36 into `dev`, promoted in #37 (staging) and #38
+(prod).
 
-## Decisions So Far
+**Result:** merging a PR deploys that branch's environment end to end, from
+the image to the infrastructure to a health check, with no stored AWS keys.
+One promotion took the same change through dev, staging, and prod, and prod
+deployed only after I approved it in GitHub.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    PR[Pull request] --> C[Lint · Docker build · Terraform]
+    C -->|merge| M[Push to dev / staging / prod]
+    M --> C2[Same checks]
+    C2 --> G{prod?}
+    G -->|yes| A[Wait for approval]
+    G -->|no| D
+    A --> D[Deploy: OIDC role → push image :sha → terraform apply → health check]
+    S[Destroy button or nightly 07:00 UTC] --> T[teardown role → terraform destroy]
+```
+
+## Results
+
+| | Before | After |
+| --- | --- | --- |
+| How a change reaches AWS | `terraform apply` and `docker push` from my laptop | Merging a PR. The pipeline builds, pushes, applies, and health-checks |
+| AWS credentials in GitHub | n/a | None. GitHub OIDC tokens are exchanged for 1-hour role credentials |
+| Environments | dev only | dev, staging, and prod from one module, each with its own state, role, domain, database, and secrets |
+| Prod release gate | n/a | Required reviewer in GitHub. The approval is recorded on the run (`keshawndev`, approved, `prod`) |
+| First deploy (creates the environment) | n/a | 4m19s (dev), 4m6s (staging), 4m5s (prod) |
+| Update deploy (rolling, no downtime) | n/a | 3m10s |
+| Teardown | `terraform destroy` by hand | Button or nightly schedule: 27 resources per environment, all three in parallel |
+| Checks required to merge | Lint, Docker build | Lint, Docker build, Terraform (`fmt` + `validate` on every stack) |
+| AWS spend in October | n/a | $0.72 so far (budget data, which lags about a day) |
+
+## Decisions
 
 - **Ephemeral environments.** Merges create or update an environment, and a
   scheduled workflow destroys all of them every night (plus a manual destroy
@@ -162,6 +196,21 @@ Dev's Stripe webhook moved from the bare domain to `dev.project1...` with an
 in-place URL update, which keeps its signing secret, so dev's SSM value
 stayed valid.
 
+### Step 9: Promotion through every environment
+
+- Merging `dev` into `staging` (#37) ran the checks again and deployed staging
+  for the first time. Staging came up healthy at
+  `https://staging.project1.keshawnbarbary.com`.
+- Merging `staging` into `prod` (#38) started the prod deploy, which paused
+  at the `prod` environment's approval gate. After I approved it, the job
+  assumed the prod role, deployed, and `https://project1.keshawnbarbary.com/api/health`
+  returned 200.
+- A Dependabot patch update (`mongoose`, `postcss`) had merged into dev and
+  rode along through the same promotion, the way any real change would.
+- Then the Destroy button with `all` removed all three environments in
+  parallel (27 resources each). Afterward, no load balancers, ECS clusters,
+  VPCs, or Elastic IPs remained.
+
 ## Problems I Solved
 
 ### 1. `validate` in CI failed with "No valid credential sources found"
@@ -205,7 +254,7 @@ stayed valid.
 - **Cause:** the previous attempt had already pushed that commit's image, and the ECR repo uses immutable tags. The pipeline wasn't idempotent: running it twice for the same commit failed.
 - **Fix:** a step checks for the tag with `aws ecr describe-images` and skips the build and push if it exists, so a re-run deploys the existing image. A re-run uses the workflow file from the original commit, so the fix shipped through a normal PR, and its merge deployed cleanly.
 
-## What I Learned (so far)
+## What I Learned
 
 - "Works locally, fails in CI" usually means an environment difference:
   credentials, environment variables, files, or tool versions.
@@ -232,3 +281,35 @@ stayed valid.
   26, so "latest" changes on its own, just like unpinned Node or Terraform.
 - Read CI logs from the bottom up: find the first `Error:` and the
   `##[group]Run` line before it, and ignore the setup noise.
+- Every merge to an environment branch deploys it, even a docs-only change.
+  The pipeline ships whatever lands.
+- A release approval should never block cost-control automation, so the
+  nightly teardown runs under its own identity.
+
+## Known Issues and Follow-ups
+
+- **The prod reviewer approves before seeing the plan.** A stronger pipeline
+  would run `terraform plan`, show it in the approval, and apply that exact
+  saved plan afterward.
+- **Docs-only merges redeploy.** A `paths-ignore` filter for `docs/**` and
+  `*.md` would skip the deploy when only documentation changes.
+- **Broad service permissions.** The deploy roles use `ec2:*`,
+  `elasticloadbalancing:*`, `ecs:*`, and `logs:*`. Tightening them with IAM
+  Access Analyzer policy generation, and adding a permissions boundary to the
+  roles Terraform creates, is the next hardening step.
+- **Each branch builds its own image.** The same commit isn't guaranteed to
+  produce the identical image in staging and prod. Build-once promotion is
+  the plan for Cloud Build Log #2.
+- **Shared integrations.** All environments use the same Google OAuth client,
+  Resend key, and Stripe test keys. A real prod would have its own OAuth
+  client and live Stripe keys.
+- **Prod is ephemeral.** Fine for a portfolio. A real prod would stay up,
+  with nightly teardown only for dev and staging.
+
+## Help and Sources
+
+I built this phase myself, with an AI mentor (Claude) guiding me through it
+step by step and assisting where I needed it. Some steps were deliberately
+broken as debugging drills (noted above). OIDC for GitHub Actions, per-
+environment roles, and GitHub Environments with required reviewers are
+standard practice rather than original designs.

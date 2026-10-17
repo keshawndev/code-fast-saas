@@ -6,9 +6,13 @@
 ## About This Project
 
 This is part of my **Cloud Build Log**, a series where I take an application
-through the full DevOps lifecycle by hand. An AI mentor guides me through
-each phase, assists where I need it, and sets deliberate debugging drills.
-I document the decisions I made and the problems I hit along the way.
+through the full DevOps lifecycle and document the decisions I made and
+the problems I hit along the way.
+
+I used AI (Claude) to assist me while building this project. I also used it
+to intentionally introduce realistic errors as I built, so I'd learn to
+diagnose and fix them. The problems labeled "a deliberate debugging exercise"
+in each phase's write-up came from that.
 
 The app is a feedback board where users post ideas and vote on them
 (Next.js, MongoDB, Auth.js, Stripe). It started as a course project; the

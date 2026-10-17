@@ -215,7 +215,7 @@ stayed valid.
 
 ### 1. `validate` in CI failed with "No valid credential sources found"
 
-- **Problem:** the new Terraform job passed for the bootstrap stack but failed for the dev stack during `init`, at `Initializing the backend...`, with `No valid credential sources found` and an `EC2 IMDS` error. (A planned drill.)
+- **Problem:** the new Terraform job passed for the bootstrap stack but failed for the dev stack during `init`, at `Initializing the backend...`, with `No valid credential sources found` and an `EC2 IMDS` error. (A deliberate debugging exercise.)
 - **Cause:** the bootstrap stack keeps local state, so its `init` needs nothing from AWS. The dev stack's `backend "s3"` makes `init` connect to the state bucket, and the CI runner has no AWS credentials. It works on my laptop because of my SSO session. The `EC2 IMDS` message was just the AWS SDK's last fallback failing.
 - **Fix:** `terraform init -backend=false`. `validate` only checks code against provider schemas and never needs state, so the check stays credential-free. Only the deploy job will get AWS access, through OIDC.
 
@@ -238,7 +238,7 @@ stayed valid.
 
 ### 5. `Not authorized to perform sts:AssumeRoleWithWebIdentity`
 
-- **Problem:** the first deploy failed at `Configure AWS credentials`. (A planned drill.)
+- **Problem:** the first deploy failed at `Configure AWS credentials`. (A deliberate debugging exercise.)
 - **Cause:** the trust policy expected the branch form of the token's subject claim, `repo:keshawndev/code-fast-saas:ref:refs/heads/dev`. A job that declares `environment:` gets the environment form instead, `repo:keshawndev/code-fast-saas:environment:dev`. AWS compared the two and refused the login. I first looked at the permissions policy, but this action is controlled by the trust policy, which is checked before any permissions apply.
 - **Fix:** trust `repo:keshawndev/code-fast-saas:environment:<env>`. This is also the stronger setting: AWS credentials now require passing that environment's protection rules, including the prod approval.
 
@@ -305,11 +305,3 @@ stayed valid.
   client and live Stripe keys.
 - **Prod is ephemeral.** Fine for a portfolio. A real prod would stay up,
   with nightly teardown only for dev and staging.
-
-## Help and Sources
-
-I built this phase myself, with an AI mentor (Claude) guiding me through it
-step by step and assisting where I needed it. Some steps were deliberately
-broken as debugging drills (noted above). OIDC for GitHub Actions, per-
-environment roles, and GitHub Environments with required reviewers are
-standard practice rather than original designs.

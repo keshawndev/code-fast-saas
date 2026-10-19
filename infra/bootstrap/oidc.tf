@@ -129,6 +129,26 @@ data "aws_iam_policy_document" "deploy" {
       "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/code-fast-saas-${each.key}-task",
     ]
   }
+
+  statement {
+    sid = "Monitoring"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:ListTagsForResource",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+      "cloudwatch:PutDashboard",
+      "cloudwatch:GetDashboard",
+      "cloudwatch:DeleteDashboards",
+      "cloudwatch:ListDashboards",
+      "sns:ListTopics",
+      "sns:GetTopicAttributes",
+      "sns:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "deploy" {

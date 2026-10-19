@@ -12,7 +12,8 @@ resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
   namespace         = "AWS/ApplicationELB"
   metric_name       = "HealthyHostCount"
   dimensions = {
-    TargetGroup = aws_lb_target_group.app.arn_suffix
+    TargetGroup  = aws_lb_target_group.app.arn_suffix
+    LoadBalancer = aws_lb.main.arn_suffix
   }
   statistic           = "Minimum"
   period              = 60

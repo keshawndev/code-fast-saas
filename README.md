@@ -32,6 +32,7 @@ containerization, pipelines, and infrastructure are my own work.
 - **Least privilege:** IAM Identity Center (SSO) instead of access keys, separate ECS execution and task roles, security groups that only let the load balancer reach the app
 - **Cost control:** a $10 budget alarm created before anything else, no NAT gateway, and teardown after every session. Phase 3 cost under $1 in AWS charges
 - **CD:** merging a PR deploys that branch's environment (build → push to ECR → `terraform apply` → health check) through GitHub OIDC with no stored AWS keys. Prod waits for a required reviewer, and a nightly workflow tears every environment down
+- **Monitoring and alerting:** six CloudWatch alarms and a dashboard per environment (availability, errors, saturation, and a log-based alarm), emailing through SNS on both failure and recovery, and proven with a failure test
 - **Debugging:** real problems I hit, and how I diagnosed and fixed them (see each phase's write-up)
 
 ## Project Phases
@@ -45,7 +46,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | 2. CI with GitHub Actions (lint, build, smoke test, image scan) | ✅ Done | [docs/phase-2-ci.md](docs/phase-2-ci.md)                             |
 | 3. AWS infrastructure with Terraform                            | ✅ Done | [docs/phase-3-infrastructure.md](docs/phase-3-infrastructure.md)     |
 | 4. Continuous deployment (dev → staging → prod)                 | ✅ Done | [docs/phase-4-cd.md](docs/phase-4-cd.md)                             |
-| 5. Monitoring and alerting                                      | Planned |                                                                      |
+| 5. Monitoring and alerting                                      | ✅ Done | [docs/phase-5-monitoring.md](docs/phase-5-monitoring.md)             |
 
 ## Tech Stack
 
@@ -55,6 +56,7 @@ problems I solved, plus a pull request into `dev` with the actual changes.
 | Containers | Docker (multi-stage), Docker Compose                      |
 | CI/CD      | GitHub Actions, GitHub Environments, OIDC to AWS          |
 | Cloud      | AWS (ECS Fargate, ALB, ECR, Route 53, ACM, SSM, S3), Terraform |
+| Monitoring | CloudWatch (alarms, dashboards, log metric filters), SNS      |
 | DNS        | Cloudflare (domain), Route 53 (delegated `project1` subdomain) |
 
 ## Branching Strategy

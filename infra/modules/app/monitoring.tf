@@ -20,6 +20,7 @@ resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
   evaluation_periods  = 2
   comparison_operator = "LessThanThreshold"
   threshold           = 1
+  treat_missing_data  = "breaching"
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }

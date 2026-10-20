@@ -27,3 +27,8 @@ output "teardown_role_arn" {
   description = "IAM role the destroy workflow assumes through GitHub OIDC"
   value       = aws_iam_role.teardown.arn
 }
+
+output "alerts_topic_arn" {
+  description = "SNS topic that CloudWatch alarms publish to"
+  value       = aws_sns_topic.alerts.arn
+}

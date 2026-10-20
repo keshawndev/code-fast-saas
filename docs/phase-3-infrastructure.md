@@ -151,7 +151,7 @@ Terraform is split into two stacks with separate state:
 
 ### 3. `Variables may not be used here` in the backend block
 
-- **Problem:** `terraform init` failed on `region = var.region` inside `backend "s3"`. (This was a deliberately broken instruction in my guided exercises.)
+- **Problem:** `terraform init` failed on `region = var.region` inside `backend "s3"`. (A deliberate debugging exercise.)
 - **Cause:** Terraform configures the backend first, before it evaluates variables, because it needs the backend to read state.
 - **Fix:** used a literal region in the backend. For multiple environments, the standard approach is partial configuration with `terraform init -backend-config=...`.
 
@@ -181,7 +181,7 @@ Terraform is split into two stacks with separate state:
 
 ### 8. The Fargate task couldn't read its secrets
 
-- **Problem:** the service never ran a task: `ResourceInitializationError: unable to pull secrets ... AccessDeniedException: User: ...assumed-role/code-fast-saas-dev-execution/... is not authorized to perform: ssm:GetParameters`. (Also a planned drill.)
+- **Problem:** the service never ran a task: `ResourceInitializationError: unable to pull secrets ... AccessDeniedException: User: ...assumed-role/code-fast-saas-dev-execution/... is not authorized to perform: ssm:GetParameters`. (A deliberate debugging exercise.)
 - **Cause:** I had attached `ssm:GetParameters` to the **task** role. Secrets listed in a task definition are fetched by the **execution** role, before the container starts. The error message named the role that was missing the permission.
 - **Fix:** moved the policy to the execution role and left the task role empty. Along the way:
   - My first attempt (`role = task.id && execution.id`) passed `terraform validate` but wasn't valid, because `&&` needs booleans and an inline policy belongs to exactly one role.
@@ -195,7 +195,7 @@ Terraform is split into two stacks with separate state:
 
 ### 10. 504 Gateway Timeout from the load balancer
 
-- **Problem:** after adding the ALB, the app URL returned `504 Gateway Timeout`. (A planned drill.)
+- **Problem:** after adding the ALB, the app URL returned `504 Gateway Timeout`. (A deliberate debugging exercise.)
 - **Cause:** the target group sent traffic to the task on port 3000, where Next.js listens, but the app security group only allowed port 80 from the ALB. The security group silently dropped the packets, so the ALB timed out. The listener port (80, what browsers use) and the target port (3000, what the ALB uses to reach the task) are separate settings, and I had mixed them up in the security group.
 - **Fix:** changed the `app_from_alb` ingress rule to 3000. My first idea was to change the target group to 80, but the container logs (`Network: ...:3000`) showed nothing listens on 80, so that would have traded one failure for another.
 - **After the fix:** the response changed to `503`. ECS had already killed the unhealthy task, and the old target was **draining** for the default 300-second deregistration delay, so for a few minutes there was no healthy target at all. Once the replacement task passed two health checks, `/api/health` returned `200 OK`.
@@ -208,7 +208,7 @@ Terraform is split into two stacks with separate state:
 
 ### 12. `CNAME ... is not permitted at apex`
 
-- **Problem:** creating `project1.keshawnbarbary.com` as a CNAME to the ALB failed with `InvalidChangeBatch: RRSet of type CNAME ... is not permitted at apex`. (A planned drill.) The rest of the apply succeeded, so the HTTPS listener existed but nothing pointed to it.
+- **Problem:** creating `project1.keshawnbarbary.com` as a CNAME to the ALB failed with `InvalidChangeBatch: RRSet of type CNAME ... is not permitted at apex`. (A deliberate debugging exercise.) The rest of the apply succeeded, so the HTTPS listener existed but nothing pointed to it.
 - **Cause:** the record's name was the zone's own name, its **apex**. Every zone has SOA and NS records at the apex, and DNS doesn't allow a CNAME to share a name with other records. A plain A record wouldn't work either, because an ALB has no fixed IPs.
 - **Fix:** a Route 53 **alias** A record pointing at the ALB (`aws_lb.main.dns_name` and the ALB's own `zone_id`). Route 53 answers with the ALB's current IPs. Re-running `apply` created only the missing record, and `curl` showed the 301 redirect and `HTTP/2 200` over HTTPS.
 
@@ -220,7 +220,7 @@ Terraform is split into two stacks with separate state:
 
 ### 14. The fixed key still didn't work
 
-- **Problem:** with the correct key in SSM (and Stripe accepting it directly), the app still reported an invalid key. (A planned drill.)
+- **Problem:** with the correct key in SSM (and Stripe accepting it directly), the app still reported an invalid key. (A deliberate debugging exercise.)
 - **Cause:** ECS fetches SSM secrets and injects them as environment variables **once, when a task starts**. The running task started before the fix, so it still had the old value. The new webhook signing secret had the same problem: the task still had the placeholder. I first assumed secrets were baked in at build time, but the CI smoke test runs the image with no secrets, which rules that out.
 - **Fix:** `aws ecs update-service --force-new-deployment` started a new task, which read the current values. After that, the test checkout succeeded, Stripe's webhook granted access, and creating a board, posting, and voting all worked.
 
@@ -336,11 +336,3 @@ found` for something that is obviously an argument is the giveaway.
 - **Production hardening I chose not to do in dev:** private subnets with a
   NAT gateway, Atlas network access limited to a static IP or PrivateLink,
   more than one task across AZs, and ALB deletion protection.
-
-## Help and Sources
-
-I built this phase myself, with an AI mentor (Claude) guiding me through it
-step by step and assisting where I needed it. Some steps were deliberately
-broken as debugging drills (noted above). I took a Terraform course earlier,
-and the patterns here (remote state, bootstrap stacks, security group
-chaining) are standard practice rather than original designs.

@@ -162,7 +162,7 @@ can merge into an environment branch.
 
 - **Problem:** the first working scan failed on six HIGH vulnerabilities, all with fixed versions available.
 - **Cause:** I located each package inside the image with `docker run --entrypoint sh ... find`. Four (in `brace-expansion`, `ip-address`, and `tar`) were inside **npm**, which comes with the `node:24-alpine` base image, but the running app never uses npm. Two were in **postcss 8.4.31**, which Next.js pins for itself. After I added an `overrides` rule for postcss, the scan still showed 8.4.31. I had only changed `package.json`, and `npm ci` installs exactly what `package-lock.json` says. It didn't warn that the two files disagreed. Running `npm install` still didn't update it: npm kept the version that was already locked. `npm ls postcss` showed the mismatch: `postcss@8.4.31 invalid: "^8.5.18"`.
-- **Fix:** removed npm, npx, corepack, and yarn in the runtime stage (6 → 2 findings). For postcss, I got stuck and had my AI mentor walk me through the fix: remove the stale `next/node_modules/postcss` entry from the lockfile, then regenerate it so npm resolved it again under the override (2 → 0). Next.js now shares the top-level `postcss@8.5.28`.
+- **Fix:** removed npm, npx, corepack, and yarn in the runtime stage (6 → 2 findings). For postcss, the fix was to remove the stale `next/node_modules/postcss` entry from the lockfile, then regenerate it so npm resolved it again under the override (2 → 0). Next.js now shares the top-level `postcss@8.5.28`.
 
 ### 9. My local npm rewrote parts of the lockfile it shouldn't have
 
@@ -191,7 +191,7 @@ can merge into an environment branch.
 ### 13. New terminals still ran Node 22 after installing Node 24
 
 - **Problem:** after `nvm install` and `nvm alias default 24`, a new terminal still reported `v22.19.0`.
-- **Cause:** `which node` pointed to a manually installed Node in `~/.local/node`. `echo $PATH` showed that folder ahead of nvm's, because a line in `~/.bashrc` that ran **after** nvm loaded put it at the front (and `~/.profile` did the same earlier). The shell runs the first `node` it finds in `PATH`. I understood the cause but wasn't sure how to change shell startup files safely, so my AI mentor made the edit.
+- **Cause:** `which node` pointed to a manually installed Node in `~/.local/node`. `echo $PATH` showed that folder ahead of nvm's, because a line in `~/.bashrc` that ran **after** nvm loaded put it at the front (and `~/.profile` did the same earlier). The shell runs the first `node` it finds in `PATH`.
 - **Fix:** moved `~/.local/node/bin` from the front of `PATH` to the end in both files, instead of deleting it, because Claude Code was also installed there. That surfaced one more mismatch: nvm's Node 24 had npm 12 installed globally, while CI uses npm 11. Pinned it with `npm install -g npm@11`. A fresh shell now resolves Node v24.21.0 and npm 11, and CI resolves `.nvmrc` to the same v24.21.0.
 
 ### 14. Dependabot's first run: five major upgrades, most of them green

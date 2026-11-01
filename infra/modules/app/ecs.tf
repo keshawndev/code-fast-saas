@@ -3,7 +3,6 @@ data "aws_ecr_repository" "app" {
 }
 
 locals {
-
   secret_names = [
     "MONGO_URI",
     "AUTH_SECRET",
@@ -14,7 +13,6 @@ locals {
     "STRIPE_WEBHOOK_SECRET",
   ]
 }
-
 
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${local.name}"
@@ -47,7 +45,7 @@ resource "aws_ecs_task_definition" "app" {
 
       portMappings = [
         {
-          containerPort = 3000
+          containerPort = local.app_port
           protocol      = "tcp"
         }
       ]
@@ -62,7 +60,7 @@ resource "aws_ecs_task_definition" "app" {
       secrets = [
         for n in local.secret_names : {
           name      = n
-          valueFrom = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/${n}"
+          valueFrom = "${local.ssm_prefix}/${n}"
         }
       ]
 
@@ -70,7 +68,7 @@ resource "aws_ecs_task_definition" "app" {
         logDriver = "awslogs"
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.region
+          awslogs-region        = local.region
           awslogs-stream-prefix = "app"
         }
       }
@@ -88,7 +86,7 @@ resource "aws_ecs_service" "app" {
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
     container_name   = "app"
-    container_port   = 3000
+    container_port   = local.app_port
   }
 
   network_configuration {

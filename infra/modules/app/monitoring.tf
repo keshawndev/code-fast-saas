@@ -137,7 +137,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
           title   = "Requests"
-          region  = var.region
+          region  = local.region
           stat    = "Sum"
           period  = 60
           metrics = [concat(["AWS/ApplicationELB", "RequestCount"], local.alb_dims)]
@@ -147,7 +147,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 12, y = 0, width = 12, height = 6
         properties = {
           title   = "Latency (p95, seconds)"
-          region  = var.region
+          region  = local.region
           stat    = "p95"
           period  = 60
           metrics = [concat(["AWS/ApplicationELB", "TargetResponseTime"], local.alb_dims)]
@@ -157,7 +157,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 0, y = 6, width = 12, height = 6
         properties = {
           title  = "5xx errors"
-          region = var.region
+          region = local.region
           stat   = "Sum"
           period = 60
           metrics = [
@@ -170,7 +170,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 12, y = 6, width = 12, height = 6
         properties = {
           title  = "Healthy targets"
-          region = var.region
+          region = local.region
           stat   = "Minimum"
           period = 60
           metrics = [[
@@ -184,7 +184,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 0, y = 12, width = 12, height = 6
         properties = {
           title  = "ECS CPU and memory (%)"
-          region = var.region
+          region = local.region
           stat   = "Average"
           period = 300
           metrics = [
@@ -197,7 +197,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric", x = 12, y = 12, width = 12, height = 6
         properties = {
           title   = "Sign-in errors (from logs)"
-          region  = var.region
+          region  = local.region
           stat    = "Sum"
           period  = 300
           metrics = [["CodeFastSaaS/${var.environment}", "AuthErrors"]]

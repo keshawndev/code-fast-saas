@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 data "aws_iam_policy_document" "ecs_tasks_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -28,10 +26,8 @@ resource "aws_iam_role" "task" {
 
 data "aws_iam_policy_document" "read_secrets" {
   statement {
-    actions = ["ssm:GetParameters"]
-    resources = [
-      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/*"
-    ]
+    actions   = ["ssm:GetParameters"]
+    resources = ["${local.ssm_prefix}/*"]
   }
 }
 

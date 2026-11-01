@@ -18,6 +18,9 @@ resource "aws_lb_target_group" "app" {
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
+  # /api/health doesn't touch MongoDB on purpose. A check that did would make
+  # ECS replace every task during a short database blip. Database failures
+  # show up in the target 5xx alarm instead.
   health_check {
     path              = "/api/health"
     matcher           = "200"

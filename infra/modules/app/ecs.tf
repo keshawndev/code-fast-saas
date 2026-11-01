@@ -57,6 +57,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "AUTH_URL", value = "https://${var.domain}" },
       ]
 
+      # Read from SSM only when a task starts: after changing a value, redeploy
       secrets = [
         for n in local.secret_names : {
           name      = n
@@ -78,7 +79,8 @@ resource "aws_ecs_task_definition" "app" {
 
 # One task to keep Fargate costs down. The ALB spans two AZs, but the app itself
 # runs in one, so an AZ outage means downtime until ECS replaces the task.
-# desired_count = 2 would put a task in each AZ at double the cost.
+# desired_count = 2 would put a task in each AZ at double the cost. Deploys
+# don't cause downtime: by default ECS starts the new task before stopping the old.
 resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn

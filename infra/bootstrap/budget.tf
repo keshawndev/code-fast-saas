@@ -1,3 +1,4 @@
+# Alerts only: a budget sends email but never stops spending
 resource "aws_budgets_budget" "monthly" {
   name         = "monthly-cost"
   budget_type  = "COST"

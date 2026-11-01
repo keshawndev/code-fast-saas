@@ -1,5 +1,11 @@
 # What each environment's pipeline may do. These statements mirror
 # modules/app: anything the module creates or looks up needs a permission here.
+#
+# Known gap: state and IAM roles are scoped per environment, but BuildApp,
+# Monitoring and DnsRecords are not, so the dev role could change prod's
+# resources. All environments share one AWS account to keep cost and setup
+# small. In production, each environment would get its own account under
+# AWS Organizations, so a dev role could never reach prod.
 
 locals {
   role_arn_prefix = "arn:aws:iam::${local.account_id}:role/code-fast-saas"

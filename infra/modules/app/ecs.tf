@@ -90,12 +90,17 @@ resource "aws_ecs_service" "app" {
   }
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
-    security_groups  = [aws_security_group.app.id]
+    subnets         = aws_subnet.public[*].id
+    security_groups = [aws_security_group.app.id]
+
+    # No NAT gateway (about $32/month), so the task needs a public IP to reach
+    # ECR, Atlas, Google and Stripe. The app security group still only accepts the ALB.
     assign_public_ip = true
   }
 
   health_check_grace_period_seconds = 60
 
+  # The target group must be attached to the ALB through a listener before the
+  # service can register tasks in it, and nothing above references the listener.
   depends_on = [aws_lb_listener.https]
 }

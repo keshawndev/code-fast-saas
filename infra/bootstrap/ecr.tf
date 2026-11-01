@@ -1,3 +1,4 @@
+# Immutable tags: a tag (git short SHA) always means exactly one build
 resource "aws_ecr_repository" "app" {
   name                 = "code-fast-saas"
   image_tag_mutability = "IMMUTABLE"

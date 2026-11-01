@@ -19,6 +19,8 @@ resource "aws_iam_role_policy_attachment" "execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Empty on purpose: the app calls no AWS APIs. The execution role above pulls
+# the image, writes logs and reads secrets.
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json

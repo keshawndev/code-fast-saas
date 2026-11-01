@@ -6,6 +6,8 @@ locals {
   alarm_actions = [data.aws_sns_topic.alerts.arn]
 }
 
+# Missing data counts as breaching: with no targets the metric reports nothing
+# at all, which is exactly the outage to catch.
 resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
   alarm_name        = "${local.name}-no-healthy-targets"
   alarm_description = "${var.environment}: the load balancer has no healthy app tasks"

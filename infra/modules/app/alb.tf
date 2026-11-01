@@ -25,6 +25,7 @@ resource "aws_lb_target_group" "app" {
     healthy_threshold = 2
   }
 
+  # The 300s default left no healthy target for minutes while a replaced task drained
   deregistration_delay = 30
 }
 

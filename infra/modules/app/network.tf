@@ -11,6 +11,7 @@ resource "aws_vpc" "main" {
   }
 }
 
+# Public subnets only: private subnets would need a NAT gateway (about $32/month).
 resource "aws_subnet" "public" {
   count = 2
 

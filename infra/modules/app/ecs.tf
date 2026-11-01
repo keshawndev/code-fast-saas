@@ -76,6 +76,9 @@ resource "aws_ecs_task_definition" "app" {
   ])
 }
 
+# One task to keep Fargate costs down. The ALB spans two AZs, but the app itself
+# runs in one, so an AZ outage means downtime until ECS replaces the task.
+# desired_count = 2 would put a task in each AZ at double the cost.
 resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn

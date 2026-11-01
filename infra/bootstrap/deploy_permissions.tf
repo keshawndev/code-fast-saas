@@ -1,49 +1,14 @@
+# What each environment's pipeline may do. These statements mirror
+# modules/app: anything the module creates or looks up needs a permission here.
+
 locals {
-  environments = toset(["dev", "staging", "prod"])
-  github_repo  = "keshawndev/code-fast-saas"
-}
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
-}
-
-data "aws_iam_policy_document" "github_trust" {
-  # One trust policy per GitHub Environment: the three deploy targets, plus
-  # "teardown" for the destroy workflow.
-  for_each = setunion(local.environments, ["teardown"])
-
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.github_repo}:environment:${each.key}"]
-    }
-  }
-}
-
-resource "aws_iam_role" "deploy" {
-  for_each = local.environments
-
-  name               = "code-fast-saas-${each.key}-deploy"
-  assume_role_policy = data.aws_iam_policy_document.github_trust[each.key].json
+  role_arn_prefix = "arn:aws:iam::${local.account_id}:role/code-fast-saas"
 }
 
 data "aws_iam_policy_document" "deploy" {
   for_each = local.environments
 
+  # Terraform state, limited to this environment's folder
   statement {
     sid       = "StateList"
     actions   = ["s3:ListBucket"]
@@ -56,6 +21,7 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["${aws_s3_bucket.tfstate.arn}/${each.key}/*"]
   }
 
+  # Push the app image to ECR
   statement {
     sid       = "EcrLogin"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -78,33 +44,44 @@ data "aws_iam_policy_document" "deploy" {
     resources = [aws_ecr_repository.app.arn]
   }
 
+  # network.tf, security_groups.tf, alb.tf, ecs.tf
   statement {
-    sid = "AppServices"
+    sid = "BuildApp"
     actions = [
       "ec2:*",
       "elasticloadbalancing:*",
       "ecs:*",
       "logs:*",
+    ]
+    resources = ["*"]
+  }
+
+  # Lookups of the certificate and zone that bootstrap owns (data blocks in alb.tf and dns.tf)
+  statement {
+    sid = "ReadSharedResources"
+    actions = [
       "acm:DescribeCertificate",
+      "acm:GetCertificate",
       "acm:ListCertificates",
       "acm:ListTagsForCertificate",
+      "route53:GetChange",
       "route53:GetHostedZone",
       "route53:ListHostedZones",
       "route53:ListHostedZonesByName",
       "route53:ListResourceRecordSets",
       "route53:ListTagsForResource",
-      "route53:GetChange",
-      "acm:GetCertificate"
     ]
     resources = ["*"]
   }
 
+  # The environment's A record in dns.tf
   statement {
     sid       = "DnsRecords"
     actions   = ["route53:ChangeResourceRecordSets"]
     resources = [aws_route53_zone.project1.arn]
   }
 
+  # The execution and task roles in iam.tf, and only those. PassRole hands them to ECS.
   statement {
     sid = "EnvRoles"
     actions = [
@@ -125,11 +102,12 @@ data "aws_iam_policy_document" "deploy" {
       "iam:PassRole",
     ]
     resources = [
-      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/code-fast-saas-${each.key}-execution",
-      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/code-fast-saas-${each.key}-task",
+      "${local.role_arn_prefix}-${each.key}-execution",
+      "${local.role_arn_prefix}-${each.key}-task",
     ]
   }
 
+  # Alarms and dashboard in monitoring.tf, plus the SNS topic lookup
   statement {
     sid = "Monitoring"
     actions = [
@@ -159,14 +137,7 @@ resource "aws_iam_role_policy" "deploy" {
   policy = data.aws_iam_policy_document.deploy[each.key].json
 }
 
-# The destroy workflow runs from one GitHub Environment ("teardown") so the
-# nightly schedule can tear down every environment without waiting for prod
-# approval. It gets each environment's deploy permissions, nothing more.
-resource "aws_iam_role" "teardown" {
-  name               = "code-fast-saas-teardown"
-  assume_role_policy = data.aws_iam_policy_document.github_trust["teardown"].json
-}
-
+# The teardown role gets every environment's deploy permissions, nothing more
 resource "aws_iam_role_policy" "teardown" {
   for_each = local.environments
 

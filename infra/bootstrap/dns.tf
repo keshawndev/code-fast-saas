@@ -1,5 +1,5 @@
 resource "aws_route53_zone" "project1" {
-  name = "project1.keshawnbarbary.com"
+  name = local.zone
 
   lifecycle {
     prevent_destroy = true

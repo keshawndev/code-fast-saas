@@ -1,11 +1,12 @@
 # What each environment's pipeline may do. These statements mirror
 # modules/app: anything the module creates or looks up needs a permission here.
 #
-# Known gap: state and IAM roles are scoped per environment, but BuildApp,
-# Monitoring and DnsRecords are not, so the dev role could change prod's
-# resources. All environments share one AWS account to keep cost and setup
-# small. In production, each environment would get its own account under
-# AWS Organizations, so a dev role could never reach prod.
+# Isolation: all environments share one AWS account to keep cost and setup
+# small. State, IAM roles and the DNS record are scoped by path and name, and
+# the isolation policy below guards everything else by Stack tag. The teardown
+# role isn't guarded, because it has to reach every environment. In production,
+# each environment would get its own account under AWS Organizations, which
+# separates them completely.
 
 locals {
   role_arn_prefix = "arn:aws:iam::${local.account_id}:role/code-fast-saas"
@@ -80,11 +81,17 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
-  # The environment's A record in dns.tf
+  # The environment's A record in dns.tf, and no other record in the zone
   statement {
     sid       = "DnsRecords"
     actions   = ["route53:ChangeResourceRecordSets"]
     resources = [aws_route53_zone.project1.arn]
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = [local.env_domains[each.key]]
+    }
   }
 
   # The execution and task roles in iam.tf, and only those. PassRole hands them to ECS.
@@ -141,6 +148,78 @@ resource "aws_iam_role_policy" "deploy" {
   name   = "deploy-${each.key}"
   role   = aws_iam_role.deploy[each.key].id
   policy = data.aws_iam_policy_document.deploy[each.key].json
+}
+
+# Deny changes to anything tagged for another environment. Every env resource
+# gets a Stack tag from default_tags. Untagged resources, including ones still
+# being created, don't match, so creating resources keeps working.
+data "aws_iam_policy_document" "isolation" {
+  for_each = local.environments
+
+  statement {
+    sid    = "OnlyThisEnvironment"
+    effect = "Deny"
+    actions = [
+      "ec2:Associate*",
+      "ec2:Attach*",
+      "ec2:Authorize*",
+      "ec2:CreateRoute",
+      "ec2:CreateTags",
+      "ec2:Delete*",
+      "ec2:Detach*",
+      "ec2:Disassociate*",
+      "ec2:Modify*",
+      "ec2:Replace*",
+      "ec2:Revoke*",
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:Delete*",
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:Modify*",
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:RemoveTags",
+      "elasticloadbalancing:Set*",
+      "ecs:Delete*",
+      "ecs:Stop*",
+      "ecs:TagResource",
+      "ecs:UntagResource",
+      "ecs:Update*",
+      "logs:Delete*",
+      "logs:Put*",
+      "logs:TagResource",
+      "logs:UntagResource",
+      "cloudwatch:Delete*",
+      "cloudwatch:DisableAlarmActions",
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:SetAlarmState",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+    ]
+    resources = ["*"]
+
+    # The resource has a Stack tag...
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/Stack"
+      values   = ["false"]
+    }
+
+    # ...and it names a different environment
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:ResourceTag/Stack"
+      values   = [each.key]
+    }
+  }
+}
+
+# Deploy roles only. On the teardown role, each environment's Deny would block
+# the other two environments.
+resource "aws_iam_role_policy" "isolation" {
+  for_each = local.environments
+
+  name   = "isolation-${each.key}"
+  role   = aws_iam_role.deploy[each.key].id
+  policy = data.aws_iam_policy_document.isolation[each.key].json
 }
 
 # The teardown role gets every environment's deploy permissions, nothing more

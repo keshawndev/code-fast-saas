@@ -1,3 +1,9 @@
+data "aws_acm_certificate" "project1" {
+  domain      = var.zone_name
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
 resource "aws_lb" "main" {
   name               = local.name
   load_balancer_type = "application"
@@ -7,11 +13,14 @@ resource "aws_lb" "main" {
 
 resource "aws_lb_target_group" "app" {
   name        = "${local.name}-app"
-  port        = 3000
+  port        = local.app_port
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
+  # /api/health doesn't touch MongoDB on purpose. A check that did would make
+  # ECS replace every task during a short database blip. Database failures
+  # show up in the target 5xx alarm instead.
   health_check {
     path              = "/api/health"
     matcher           = "200"
@@ -19,6 +28,7 @@ resource "aws_lb_target_group" "app" {
     healthy_threshold = 2
   }
 
+  # The 300s default left no healthy target for minutes while a replaced task drained
   deregistration_delay = 30
 }
 
@@ -35,5 +45,18 @@ resource "aws_lb_listener" "http" {
       protocol    = "HTTPS"
       status_code = "HTTP_301"
     }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = data.aws_acm_certificate.project1.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
   }
 }

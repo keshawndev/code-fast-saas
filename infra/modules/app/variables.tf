@@ -14,11 +14,6 @@ variable "zone_name" {
   default     = "project1.keshawnbarbary.com"
 }
 
-variable "region" {
-  description = "AWS region"
-  type        = string
-}
-
 variable "image_tag" {
   description = "Image tag in ECR to deploy (git short SHA)"
   type        = string
@@ -27,8 +22,4 @@ variable "image_tag" {
 variable "stripe_price_id" {
   description = "Stripe price ID for the subscription"
   type        = string
-}
-
-locals {
-  name = "code-fast-saas-${var.environment}"
 }

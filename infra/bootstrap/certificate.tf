@@ -1,6 +1,6 @@
 resource "aws_acm_certificate" "project1" {
-  domain_name               = "project1.keshawnbarbary.com"
-  subject_alternative_names = ["dev.project1.keshawnbarbary.com", "staging.project1.keshawnbarbary.com"]
+  domain_name               = local.zone
+  subject_alternative_names = ["dev.${local.zone}", "staging.${local.zone}"]
   validation_method         = "DNS"
 
   lifecycle {

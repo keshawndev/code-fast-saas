@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
-  description = "Public HTTP to the load balancer"
+  description = "Public HTTP and HTTPS to the load balancer"
   vpc_id      = aws_vpc.main.id
 }
 

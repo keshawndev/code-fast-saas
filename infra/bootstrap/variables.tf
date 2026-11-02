@@ -1,5 +1,5 @@
-variable "budget_email" {
-  description = "Email address that receives AWS budget alerts"
+variable "alert_email" {
+  description = "Email address that receives budget and CloudWatch alarm emails"
   type        = string
   sensitive   = true
 }

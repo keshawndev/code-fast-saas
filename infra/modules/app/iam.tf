@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 data "aws_iam_policy_document" "ecs_tasks_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -21,6 +19,8 @@ resource "aws_iam_role_policy_attachment" "execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Empty on purpose: the app calls no AWS APIs. The execution role above pulls
+# the image, writes logs and reads secrets.
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
@@ -28,10 +28,8 @@ resource "aws_iam_role" "task" {
 
 data "aws_iam_policy_document" "read_secrets" {
   statement {
-    actions = ["ssm:GetParameters"]
-    resources = [
-      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/*"
-    ]
+    actions   = ["ssm:GetParameters"]
+    resources = ["${local.ssm_prefix}/*"]
   }
 }
 

@@ -1,7 +1,8 @@
 resource "aws_route53_zone" "project1" {
-  name = "project1.keshawnbarbary.com"
+  name = local.zone
 
   lifecycle {
+    # A new zone gets new nameservers, which breaks the NS delegation in Cloudflare
     prevent_destroy = true
   }
 }

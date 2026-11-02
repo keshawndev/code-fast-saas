@@ -7,10 +7,11 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = {
-    Name = "${local.name}"
+    Name = local.name
   }
 }
 
+# Public subnets only: private subnets would need a NAT gateway (about $32/month).
 resource "aws_subnet" "public" {
   count = 2
 

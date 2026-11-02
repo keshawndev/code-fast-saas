@@ -1,7 +1,5 @@
-data "aws_caller_identity" "current" {}
-
 resource "aws_s3_bucket" "tfstate" {
-  bucket = "code-fast-saas-tfstate-${data.aws_caller_identity.current.account_id}"
+  bucket = "code-fast-saas-tfstate-${local.account_id}"
 
   lifecycle {
     prevent_destroy = true

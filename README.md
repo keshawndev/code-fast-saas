@@ -140,8 +140,11 @@ in the [Phase 3](docs/phase-3-infrastructure.md) and
 
 1. **Bootstrap** (budget alarm, state bucket, ECR, Route 53 zone,
    certificate, GitHub OIDC provider and roles): copy
-   `infra/bootstrap/terraform.tfvars.example` to `terraform.tfvars`, then
-   run `terraform init` and `terraform apply` in `infra/bootstrap/`.
+   `infra/bootstrap/terraform.tfvars.example` to `terraform.tfvars`. The
+   backend bucket doesn't exist yet, so comment out the `backend "s3"` block
+   in `versions.tf`, run `terraform init` and `terraform apply` in
+   `infra/bootstrap/`, then restore the block (with your account ID in the
+   bucket name) and run `terraform init -migrate-state`.
 2. **GitHub Environments:** `dev`, `staging`, `prod` (each limited to its
    own branch, with prod requiring a reviewer) and `teardown`, each with an
    `AWS_ROLE_ARN` variable from the bootstrap outputs, plus a

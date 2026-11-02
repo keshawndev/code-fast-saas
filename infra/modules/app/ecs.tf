@@ -3,7 +3,6 @@ data "aws_ecr_repository" "app" {
 }
 
 locals {
-
   secret_names = [
     "MONGO_URI",
     "AUTH_SECRET",
@@ -14,7 +13,6 @@ locals {
     "STRIPE_WEBHOOK_SECRET",
   ]
 }
-
 
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${local.name}"
@@ -47,7 +45,7 @@ resource "aws_ecs_task_definition" "app" {
 
       portMappings = [
         {
-          containerPort = 3000
+          containerPort = local.app_port
           protocol      = "tcp"
         }
       ]
@@ -59,10 +57,11 @@ resource "aws_ecs_task_definition" "app" {
         { name = "AUTH_URL", value = "https://${var.domain}" },
       ]
 
+      # Read from SSM only when a task starts: after changing a value, redeploy
       secrets = [
         for n in local.secret_names : {
           name      = n
-          valueFrom = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/code-fast-saas/${var.environment}/${n}"
+          valueFrom = "${local.ssm_prefix}/${n}"
         }
       ]
 
@@ -70,7 +69,7 @@ resource "aws_ecs_task_definition" "app" {
         logDriver = "awslogs"
         options = {
           awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.region
+          awslogs-region        = local.region
           awslogs-stream-prefix = "app"
         }
       }
@@ -78,6 +77,10 @@ resource "aws_ecs_task_definition" "app" {
   ])
 }
 
+# One task to keep Fargate costs down. The ALB spans two AZs, but the app itself
+# runs in one, so an AZ outage means downtime until ECS replaces the task.
+# desired_count = 2 would put a task in each AZ at double the cost. Deploys
+# don't cause downtime: by default ECS starts the new task before stopping the old.
 resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
@@ -88,16 +91,21 @@ resource "aws_ecs_service" "app" {
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
     container_name   = "app"
-    container_port   = 3000
+    container_port   = local.app_port
   }
 
   network_configuration {
-    subnets          = aws_subnet.public[*].id
-    security_groups  = [aws_security_group.app.id]
+    subnets         = aws_subnet.public[*].id
+    security_groups = [aws_security_group.app.id]
+
+    # No NAT gateway (about $32/month), so the task needs a public IP to reach
+    # ECR, Atlas, Google and Stripe. The app security group still only accepts the ALB.
     assign_public_ip = true
   }
 
   health_check_grace_period_seconds = 60
 
+  # The target group must be attached to the ALB through a listener before the
+  # service can register tasks in it, and nothing above references the listener.
   depends_on = [aws_lb_listener.https]
 }

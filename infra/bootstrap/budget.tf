@@ -1,3 +1,4 @@
+# Alerts only: a budget sends email but never stops spending
 resource "aws_budgets_budget" "monthly" {
   name         = "monthly-cost"
   budget_type  = "COST"
@@ -10,7 +11,7 @@ resource "aws_budgets_budget" "monthly" {
     threshold                  = 80
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
-    subscriber_email_addresses = [var.budget_email]
+    subscriber_email_addresses = [var.alert_email]
   }
 
   notification {
@@ -18,6 +19,6 @@ resource "aws_budgets_budget" "monthly" {
     threshold                  = 100
     threshold_type             = "PERCENTAGE"
     notification_type          = "FORECASTED"
-    subscriber_email_addresses = [var.budget_email]
+    subscriber_email_addresses = [var.alert_email]
   }
 }

@@ -6,7 +6,7 @@ locals {
   environments = toset(["dev", "staging", "prod"])
   github_repo  = "keshawndev/code-fast-saas"
 
-  # Hostname each environment serves; must match domain in envs/*/main.tf
+  # Hostname each environment serves; must match domain in envs/*/20-app/main.tf
   env_domains = {
     dev     = "dev.${local.zone}"
     staging = "staging.${local.zone}"

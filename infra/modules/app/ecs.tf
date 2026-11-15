@@ -95,7 +95,7 @@ resource "aws_ecs_service" "app" {
   }
 
   network_configuration {
-    subnets         = aws_subnet.public[*].id
+    subnets         = local.public_subnet_ids
     security_groups = [aws_security_group.app.id]
 
     # No NAT gateway (about $32/month), so the task needs a public IP to reach

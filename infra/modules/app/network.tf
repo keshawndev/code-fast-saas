@@ -1,45 +1,26 @@
-data "aws_availability_zones" "available" {
-  state = "available"
-}
+# The network comes from the 10-network layer. It's looked up by tag instead
+# of read from that layer's state, so the app layer needs no access to it.
+# If these lookups fail, apply 10-network first.
 
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-
+data "aws_vpc" "main" {
   tags = {
     Name = local.name
   }
 }
 
-# Public subnets only: private subnets would need a NAT gateway (about $32/month).
-resource "aws_subnet" "public" {
-  count = 2
-
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)
-  availability_zone = data.aws_availability_zones.available.names[count.index]
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.main.id]
+  }
 
   tags = {
-    Name = "${local.name}-public-${count.index}"
+    Tier = "public"
   }
 }
 
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-}
-
-resource "aws_route_table_association" "public" {
-  count = 2
-
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+locals {
+  # Sorted, because the lookup doesn't promise an order and a changed order
+  # would show up as a diff on every plan
+  public_subnet_ids = sort(data.aws_subnets.public.ids)
 }

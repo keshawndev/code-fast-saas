@@ -77,7 +77,7 @@ jobs:
 
       - name: Validate configuration
         run: |
-          for dir in infra/bootstrap infra/envs/*; do
+          for dir in infra/bootstrap infra/envs/*/*; do
             echo "::group::$dir"
             terraform -chdir=$dir init -input=false -backend=false
             terraform -chdir=$dir validate
@@ -141,17 +141,23 @@ jobs:
           terraform_version: 1.16.4
           terraform_wrapper: false
 
+      # Layers in order: the app layer looks up the VPC that 10-network creates.
+      # 10-network ignores the TF_VAR_ values; it doesn't declare them.
       - name: Terraform apply
         working-directory: infra/envs/${{ github.ref_name }}
         env:
           TF_VAR_image_tag: ${{ env.TAG }}
           TF_VAR_stripe_price_id: ${{ vars.STRIPE_PRICE_ID }}
         run: |
-          terraform init -input=false
-          terraform apply -input=false -auto-approve
+          for layer in 10-network 20-app; do
+            echo "::group::apply $layer"
+            terraform -chdir=$layer init -input=false
+            terraform -chdir=$layer apply -input=false -auto-approve
+            echo "::endgroup::"
+          done
 
       - name: Wait for service and check health
-        working-directory: infra/envs/${{ github.ref_name }}
+        working-directory: infra/envs/${{ github.ref_name }}/20-app
         run: |
           aws ecs wait services-stable --cluster code-fast-saas-${{ github.ref_name }} --services app
           URL=$(terraform output -raw app_url)

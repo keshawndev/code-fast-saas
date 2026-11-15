@@ -8,8 +8,14 @@ on:
         type: choice
         options: [dev, staging, prod, all]
         default: dev
+      layers:
+        description: "app: only what costs money. everything: the network too."
+        type: choice
+        options: [app, everything]
+        default: app
   schedule:
-    # 07:00 UTC is 3 AM Eastern (2 AM in winter). Tears down anything left running.
+    # 07:00 UTC is 3 AM Eastern (2 AM in winter). Tears down every app layer
+    # left running. The network layers are free while idle, so they stay.
     - cron: "0 7 * * *"
 
 jobs:
@@ -43,12 +49,24 @@ jobs:
           terraform_version: 1.16.4
           terraform_wrapper: false
 
+      # Reverse of the apply order: the app layer has to go before the VPC it
+      # sits in. A layer with nothing in its state is skipped, because the app
+      # layer's VPC lookup fails when the network is already gone.
       - name: Terraform destroy
         working-directory: infra/envs/${{ matrix.environment }}
         env:
+          LAYERS: ${{ (github.event_name == 'schedule' || inputs.layers == 'app') && '20-app' || '20-app 10-network' }}
           # Required variables; their values don't matter for a destroy.
           TF_VAR_image_tag: unused
           TF_VAR_stripe_price_id: unused
         run: |
-          terraform init -input=false
-          terraform destroy -input=false -auto-approve
+          for layer in $LAYERS; do
+            echo "::group::destroy $layer"
+            terraform -chdir=$layer init -input=false
+            if [ -z "$(terraform -chdir=$layer state list)" ]; then
+              echo "$layer has nothing to destroy"
+            else
+              terraform -chdir=$layer destroy -input=false -auto-approve
+            fi
+            echo "::endgroup::"
+          done

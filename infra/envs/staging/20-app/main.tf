@@ -1,3 +1,7 @@
+# Layer 20: the app (security groups, load balancer, ECS, DNS record, alarms).
+# Needs 10-network applied first: it finds the VPC by tag. Changes on every
+# deploy, costs money while running, and is what the nightly teardown removes.
+
 terraform {
   required_version = ">= 1.10"
 
@@ -10,7 +14,7 @@ terraform {
 
   backend "s3" {
     bucket       = "code-fast-saas-tfstate-929751801956"
-    key          = "dev/terraform.tfstate"
+    key          = "staging/20-app/terraform.tfstate"
     region       = "us-east-1"
     use_lockfile = true
     encrypt      = true
@@ -24,7 +28,7 @@ provider "aws" {
     tags = {
       Project   = "code-fast-saas"
       ManagedBy = "terraform"
-      Stack     = "dev"
+      Stack     = "staging"
     }
   }
 }
@@ -40,15 +44,15 @@ variable "stripe_price_id" {
 }
 
 module "app" {
-  source = "../../modules/app"
+  source = "../../../modules/app"
 
-  environment     = "dev"
-  domain          = "dev.project1.keshawnbarbary.com"
+  environment     = "staging"
+  domain          = "staging.project1.keshawnbarbary.com"
   image_tag       = var.image_tag
   stripe_price_id = var.stripe_price_id
 }
 
 output "app_url" {
-  description = "Public URL of the dev environment"
+  description = "Public URL of the staging environment"
   value       = module.app.app_url
 }
